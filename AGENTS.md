@@ -22,14 +22,14 @@ The structure and workflows below describe the bootstrap target. Check the check
 
 waypoint-notification-service owns everything that tells someone something: in the app, by email or on mobile. NestJS, its own PostgreSQL database (one database and one user in the shared PostgreSQL of the VPS), events over NATS JetStream through `@waypoint/nest-messaging`, internal REST for the API gateway. Local port 3016.
 
-| | |
-| --- | --- |
-| Data | Notifications and their read state, reminders and their due time, preferences (7 events × 3 channels, digest, Do not disturb), delivery log, the 13 email templates. |
-| API | Inbox (list, mark read), reminders (create, snooze, mark done), preferences. |
-| Emits | `notification.created`, `reminder.due` |
+|            |                                                                                                                                                                           |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Data       | Notifications and their read state, reminders and their due time, preferences (7 events × 3 channels, digest, Do not disturb), delivery log, the 13 email templates.      |
+| API        | Inbox (list, mark read), reminders (create, snooze, mark done), preferences.                                                                                              |
+| Emits      | `notification.created`, `reminder.due`                                                                                                                                    |
 | Listens to | `task.assigned`, `comment.created` (mentions), `approval.requested`, `member.invited` (invitation email), `user.signed-up` (verification code), `quota.threshold-reached` |
-| External | Email provider, mobile push. |
-| Phase | First version |
+| External   | Email provider, mobile push.                                                                                                                                              |
+| Phase      | First version                                                                                                                                                             |
 
 A scheduled job sends reminders, digests and due-date alerts.
 
@@ -71,21 +71,20 @@ repository and nothing is inherited.
 - The parts shared with the other repositories are duplicated on purpose; a change to them is repeated
   in each repository through its own pull request.
 
-
 ## Commands and quality gates
 
 The scripts below are this repository's contract. While the repository is being bootstrapped,
 create them with these exact names; afterwards, use them and never an ad-hoc equivalent. Run the
 narrowest check that covers the change first, then widen:
 
-| Changed | Minimum check |
-| --- | --- |
-| Domain or use case code | `pnpm test -- <module>`, then `pnpm test:coverage` |
-| Persistence, events, migrations | `pnpm test:integration -- <module>` |
-| Routes | `pnpm test -- <module>/api` and the contract tests |
-| Any source | `pnpm format:check`, `pnpm lint`, `pnpm typecheck` |
-| Build or runtime configuration | `pnpm build`, `docker compose -f compose.dev.yaml config -q` |
-| Docs or agent instructions only | Scoped formatting and link review |
+| Changed                         | Minimum check                                                |
+| ------------------------------- | ------------------------------------------------------------ |
+| Domain or use case code         | `pnpm test -- <module>`, then `pnpm test:coverage`           |
+| Persistence, events, migrations | `pnpm test:integration -- <module>`                          |
+| Routes                          | `pnpm test -- <module>/api` and the contract tests           |
+| Any source                      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`           |
+| Build or runtime configuration  | `pnpm build`, `docker compose -f compose.dev.yaml config -q` |
+| Docs or agent instructions only | Scoped formatting and link review                            |
 
 Report the commands you actually ran and their results; a check you did not run is reported as not
 run.
