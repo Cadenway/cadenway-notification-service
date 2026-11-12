@@ -3,7 +3,7 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "package-name": "waypoint-notification-service",
+      "package-name": "cadenway-notification-service",
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false
     }

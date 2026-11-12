@@ -1,7 +1,7 @@
 {
-  "name": "waypoint-notification-service",
+  "name": "cadenway-notification-service",
   "version": "0.0.0",
-  "description": "Waypoint notification service: inbox, reminders, preferences and emails.",
+  "description": "Cadenway notification service: inbox, reminders, preferences and emails.",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
