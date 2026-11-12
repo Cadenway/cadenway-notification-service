@@ -1,6 +1,6 @@
-# waypoint-notification-service documentation
+# cadenway-notification-service documentation
 
-Planned role: waypoint-notification-service owns everything that tells someone something: in the app, by email or on mobile. NestJS, its own PostgreSQL database (one database and one user in the shared PostgreSQL of the VPS), events over NATS JetStream through `@waypoint/nest-messaging`, internal REST for the API gateway. Local port 3016.
+Planned role: cadenway-notification-service owns everything that tells someone something: in the app, by email or on mobile. NestJS, its own PostgreSQL database (one database and one user in the shared PostgreSQL of the VPS), events over NATS JetStream through `@cadenway/nest-messaging`, internal REST for the API gateway. Local port 3016.
 
 ## Current status
 

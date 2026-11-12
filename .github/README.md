@@ -1,15 +1,15 @@
-# waypoint-notification-service
+# cadenway-notification-service
 
-waypoint-notification-service owns everything that tells someone something: in the app, by email or on mobile. NestJS, its own PostgreSQL database (one database and one user in the shared PostgreSQL of the VPS), events over NATS JetStream through `@waypoint/nest-messaging`, internal REST for the API gateway. Local port 3016.
+cadenway-notification-service owns everything that tells someone something: in the app, by email or on mobile. NestJS, its own PostgreSQL database (one database and one user in the shared PostgreSQL of the VPS), events over NATS JetStream through `@cadenway/nest-messaging`, internal REST for the API gateway. Local port 3016.
 
-| | |
-| --- | --- |
-| Data | Notifications and their read state, reminders and their due time, preferences (7 events × 3 channels, digest, Do not disturb), delivery log, the 13 email templates. |
-| API | Inbox (list, mark read), reminders (create, snooze, mark done), preferences. |
-| Emits | `notification.created`, `reminder.due` |
+|            |                                                                                                                                                                           |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Data       | Notifications and their read state, reminders and their due time, preferences (7 events × 3 channels, digest, Do not disturb), delivery log, the 13 email templates.      |
+| API        | Inbox (list, mark read), reminders (create, snooze, mark done), preferences.                                                                                              |
+| Emits      | `notification.created`, `reminder.due`                                                                                                                                    |
 | Listens to | `task.assigned`, `comment.created (mentions)`, `approval.requested`, `member.invited (invitation email)`, `user.signed-up (verification code)`, `quota.threshold-reached` |
-| External | Email provider, mobile push. |
-| Phase | First version |
+| External   | Email provider, mobile push.                                                                                                                                              |
+| Phase      | First version                                                                                                                                                             |
 
 A scheduled job sends reminders, digests and due-date alerts.
 
@@ -17,12 +17,12 @@ A scheduled job sends reminders, digests and due-date alerts.
 
 Requirements: Node.js LTS and pnpm (versions in `package.json`), and Docker.
 
-1. Clone this repository next to the other Waypoint repositories, flat, in one folder.
-2. To run it with the rest of Waypoint, start the stack from `waypoint-ops`; it builds the sibling
+1. Clone this repository next to the other Cadenway repositories, flat, in one folder.
+2. To run it with the rest of Cadenway, start the stack from `cadenway-ops`; it builds the sibling
    folders, this one included (`core` profile; `full` adds every other service):
 
    ```bash
-   cd ../waypoint-ops/compose
+   cd ../cadenway-ops/compose
    docker compose -f compose.yaml -f compose.local.yaml --profile core up -d
    ```
 
@@ -41,7 +41,7 @@ Run the narrowest check first; CI runs them all on every pull request.
 pnpm format:check
 pnpm lint
 pnpm typecheck
-pnpm test -- src/modules/<module>      # targeted
+pnpm test src/modules/<module>      # targeted
 pnpm test:integration                    # PostgreSQL and NATS in Docker
 pnpm test:coverage
 pnpm build
