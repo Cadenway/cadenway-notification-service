@@ -46,6 +46,8 @@ Load them with the `Skill` tool when their subject comes up (if the tool is unav
 | Skill | Load it when |
 | --- | --- |
 | `cw-context` | when the change affects cadenway-ops |
+| `cw-logging-and-tracing` | when the start command, the health checks or the telemetry variables change |
+| `cw-email-templates` | when the build compiles the email templates |
 
 ## Procedure
 
