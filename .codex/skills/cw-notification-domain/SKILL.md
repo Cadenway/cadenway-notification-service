@@ -31,6 +31,8 @@ Everything that tells someone something: in the app, by email or on mobile.
 
 A scheduled job sends reminders, digests and due-date alerts.
 
+Decided: cadenway-automation-service calls this service's API for its notify action. The newsletter subscription and the contact form of the public site are received here, in tables without `organization_id`. The mobile channel is stored as a preference and nothing is sent on it while no mobile application exists. This service keeps a projection of user profiles (name, email, time zone, language) from `user.profile-updated` and `user.deleted`. The events that trigger the security emails other than the verification code are not decided yet.
+
 Everything above comes from the [repositories document](https://claude.ai/artifact/BPinmYxoF3mbK8w9BMB43N) and the
 [integration guide](https://claude.ai/artifact/CpJHVCiFfF9j3KbHQ2S1Et). When the mockup and this skill disagree, the mockup wins and
 this skill is corrected in the same change.
