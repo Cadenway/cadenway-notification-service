@@ -32,6 +32,8 @@ Everything that tells someone something: in the app, by email or on mobile.
 
 A scheduled job sends reminders, digests and due-date alerts.
 
+Decided: cadenway-automation-service calls this service's API for its notify action. The newsletter subscription and the contact form of the public site are received here, in tables without `organization_id`. The mobile channel is stored as a preference and nothing is sent on it while no mobile application exists. This service keeps a projection of user profiles (name, email, time zone, language) from `user.profile-updated` and `user.deleted`. The security emails (sign-in code, reset link, password changed, new sign-in, MFA enabled, account deletion) are triggered by a dedicated family of cadenway-identity-service events; an event carries the single-use, short-lived code or link when the email needs one. This service is the only subscriber allowed on their NATS subjects and keeps the code or link out of its logs and of its send log.
+
 Everything above comes from the [repositories document](https://claude.ai/artifact/BPinmYxoF3mbK8w9BMB43N) and the
 [integration guide](https://claude.ai/artifact/CpJHVCiFfF9j3KbHQ2S1Et). If the mockup disagrees with this guide, update the guide and its source skill for both assistants.
 
