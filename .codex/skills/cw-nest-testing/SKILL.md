@@ -18,7 +18,12 @@ description: "How to write unit, integration and contract tests in a Cadenway Ne
   `compose.dev.yaml` as a throwaway Compose project on free ports, applies the migrations with
   `src/migrate.ts` as the migrator role, and runs the application as the `notification_app` role and
   the `notification` NATS user, under the permissions of cadenway-ops; move it to `createTestApp()`
-  when it ships.
+  when it ships. `test/code-email.int-spec.ts` does the same with the Mailpit of `compose.dev.yaml`,
+  publishes the restricted events as the `identity` user of the broker and reads the e-mails back
+  from the HTTP API of Mailpit.
+- **Logs**: never assert on the text of a log line. The one exception is a check that a secret (a
+  code, an address) appears in no line: capture the lines with `logDestination` of
+  `createApplication` and assert the absence of the value.
 - **Third parties**: external HTTP systems (Stripe, GitHub, GitLab, identity providers) are faked
   with `msw` through `@cadenway/nest-testing`; a test never reaches the network.
 - **Properties**: a domain rule with a wide input space also gets a property test, with `fast-check`

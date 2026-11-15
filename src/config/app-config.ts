@@ -25,31 +25,156 @@ import { z } from 'zod';
  * - `INTERNAL_TOKEN_AUDIENCE` and `INTERNAL_TOKEN_TRUSTED_ISSUERS`: the `aud` this service accepts
  *   and the public keys of the backends allowed to call it.
  *
- * `OTEL_EXPORTER_OTLP_ENDPOINT` is read by `telemetry.ts`, before the application exists.
- * `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` and `MAIL_FROM` are set as well and join
- * this schema with the e-mail sender.
+ * - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` and `WEB_APP_URL`: the
+ *   outgoing e-mail, see `EmailConfig`.
  *
- * @type {BaseConfig & DatabaseConfig & MessagingConfig & InternalTokenVerifierConfig}
+ * `OTEL_EXPORTER_OTLP_ENDPOINT` is read by `telemetry.ts`, before the application exists.
+ *
+ * @type {BaseConfig & DatabaseConfig & MessagingConfig & InternalTokenVerifierConfig & EmailConfig}
  */
-export type AppConfig = BaseConfig & DatabaseConfig & MessagingConfig & InternalTokenVerifierConfig;
+export type AppConfig = BaseConfig &
+  DatabaseConfig &
+  MessagingConfig &
+  InternalTokenVerifierConfig &
+  EmailConfig;
+
+/**
+ * Interface EmailConfig
+ *
+ * @description
+ * Variables of the outgoing e-mail. cadenway-ops passes the account of the e-mail provider on a
+ * server (`docs/service-environment.md` there); locally they point at Mailpit, which asks for no
+ * account. None of them is ever logged.
+ */
+export interface EmailConfig {
+  // #region Properties
+  /**
+   * Property SMTP_HOST
+   *
+   * @description
+   * Host name of the SMTP server: `localhost` for the Mailpit of `compose.dev.yaml`, `mailpit` in
+   * the stack of cadenway-ops, the relay of the provider on a server.
+   *
+   * @type {string}
+   * @readonly
+   */
+  readonly SMTP_HOST: string;
+
+  /**
+   * Property SMTP_PORT
+   *
+   * @description
+   * Port of the SMTP server, from 1 to 65535. Port 465 opens the connection in TLS; any other port
+   * starts in clear and upgrades with STARTTLS when the server offers it, which is required as
+   * soon as an account is set.
+   *
+   * @type {number}
+   * @readonly
+   */
+  readonly SMTP_PORT: number;
+
+  /**
+   * Property SMTP_USER
+   *
+   * @description
+   * Account on the SMTP server; unset (or empty) for a server that asks for none, such as Mailpit.
+   * Set together with `SMTP_PASSWORD`.
+   *
+   * @type {string | undefined}
+   * @readonly
+   */
+  readonly SMTP_USER?: string;
+
+  /**
+   * Property SMTP_PASSWORD
+   *
+   * @description
+   * Password of `SMTP_USER`. A secret, kept in cadenway-ops and never logged.
+   *
+   * @type {string | undefined}
+   * @readonly
+   */
+  readonly SMTP_PASSWORD?: string;
+
+  /**
+   * Property MAIL_FROM
+   *
+   * @description
+   * Sender address of every e-mail, shown as `Cadenway <MAIL_FROM>`; its domain also names the
+   * `Message-ID` of each e-mail.
+   *
+   * @type {string}
+   * @readonly
+   */
+  readonly MAIL_FROM: string;
+
+  /**
+   * Property WEB_APP_URL
+   *
+   * @description
+   * Origin of the web application, without a trailing slash, from which the links of the e-mails
+   * are built: the manage-notifications page of `List-Unsubscribe` and the buttons of the
+   * templates. `deploy/compose.yaml` builds it from the `PUBLIC_SCHEME` and `DOMAIN` of each
+   * environment; unset, it is `http://app.cadenway.localhost`, the web application of the local
+   * stack of cadenway-ops.
+   *
+   * @type {string}
+   * @readonly
+   */
+  readonly WEB_APP_URL: string;
+  // #endregion
+}
+
+/**
+ * Constant LOCAL_WEB_APP_URL
+ *
+ * @description
+ * Origin of the web application of the local stack of cadenway-ops (`PUBLIC_SCHEME=http`,
+ * `DOMAIN=cadenway.localhost`), the value of `WEB_APP_URL` when it is not set. Every environment
+ * of cadenway-ops sets the variable through `deploy/compose.yaml`.
+ *
+ * @type {string}
+ */
+const LOCAL_WEB_APP_URL: string = 'http://app.cadenway.localhost';
 
 /**
  * Constant appConfigSchema
  *
  * @description
  * Zod schema of `AppConfig`, composed from the shapes of `@cadenway/nest-common` and
- * `@cadenway/nest-messaging` so the names, defaults and validation stay those of the kit. A missing
- * or invalid variable makes `loadConfig` throw a `ConfigError` that names it without printing its
- * value.
+ * `@cadenway/nest-messaging` so the names, defaults and validation stay those of the kit, and from
+ * the variables of the outgoing e-mail. A missing or invalid variable makes `loadConfig` throw a
+ * `ConfigError` that names it without printing its value. An empty variable counts as unset, so
+ * the empty `SMTP_USER` and `SMTP_PASSWORD` of `.env.example` mean "no account"; the two are set
+ * together or not at all.
  *
  * @type {z.ZodType<AppConfig>}
  */
-export const appConfigSchema: z.ZodType<AppConfig> = z.object({
-  ...baseConfigShape,
-  ...databaseConfigShape,
-  ...messagingConfigShape,
-  ...internalTokenVerifierConfigShape,
-});
+export const appConfigSchema: z.ZodType<AppConfig> = z
+  .object({
+    ...baseConfigShape,
+    ...databaseConfigShape,
+    ...messagingConfigShape,
+    ...internalTokenVerifierConfigShape,
+    SMTP_HOST: z.string().min(1),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65_535),
+    SMTP_USER: z.string().min(1).optional(),
+    SMTP_PASSWORD: z.string().min(1).optional(),
+    MAIL_FROM: z.email({ error: 'Expected the sender e-mail address.' }),
+    WEB_APP_URL: z
+      .url({ protocol: /^https?$/u, error: 'Expected the http:// or https:// origin of the app.' })
+      .default(LOCAL_WEB_APP_URL)
+      .transform((url) => url.replace(/\/+$/u, '')),
+  })
+  .superRefine((config, context) => {
+    if ((config.SMTP_USER === undefined) !== (config.SMTP_PASSWORD === undefined)) {
+      context.addIssue({
+        code: 'custom',
+        path: [config.SMTP_USER === undefined ? 'SMTP_USER' : 'SMTP_PASSWORD'],
+        message: 'SMTP_USER and SMTP_PASSWORD are set together or not at all.',
+      });
+    }
+  });
 
 /**
  * Interface MigrationConfig

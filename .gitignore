@@ -21,6 +21,8 @@ node_modules/
 
 # Build outputs and caches.
 dist/
+# The e-mail templates compiled by scripts/build-email-templates.mjs.
+src/modules/email/infrastructure/templates/generated/
 coverage/
 .cache/
 .turbo/

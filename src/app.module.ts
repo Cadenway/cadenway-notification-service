@@ -1,6 +1,8 @@
-import { CONFIG, ConfigModule, HealthModule, postgresIndicator } from '@cadenway/nest-common';
+import { RESTRICTED_EVENT_NAMES } from '@cadenway/contracts/events/identity-service';
+import { CONFIG, HealthModule, postgresIndicator } from '@cadenway/nest-common';
 import type { PostgresProbe } from '@cadenway/nest-common';
 import { DATABASE_POOL, DatabaseModule } from '@cadenway/nest-common/database';
+import { JobsModule } from '@cadenway/nest-jobs';
 import {
   MessagingConnection,
   MessagingModule,
@@ -9,8 +11,9 @@ import {
 import { OutboxModule } from '@cadenway/nest-messaging/outbox';
 import { Module } from '@nestjs/common';
 
-import { appConfigSchema } from './config/app-config.js';
 import type { AppConfig } from './config/app-config.js';
+import { jobQueues } from './config/job-queues.js';
+import { EmailModule } from './modules/email/email.module.js';
 import { PlatformModule } from './modules/platform/platform.module.js';
 
 /**
@@ -22,9 +25,10 @@ import { PlatformModule } from './modules/platform/platform.module.js';
  * the other shared formats; this module declares what the service itself depends on. Importing it
  * reads no configuration: every module below is built when the application is created.
  *
- * - `ConfigModule` (`eager: false`): the environment is validated against `appConfigSchema` when
- *   the application is created and provided as `CONFIG`; an invalid one makes `createApplication`
- *   reject with the `ConfigError`, which `runApplication` writes as one line.
+ * - `CONFIG` is not provided here: `main.ts` validates the environment once against
+ *   `appConfigSchema`, inside `runApplication`, and `createApplication` provides that result
+ *   globally (`provideConfig: true`); a test provides its own with `ConfigModule.forValue`.
+ *   Importing this module reads no configuration.
  * - `DatabaseModule`: the pool of this service's own database, opened as the application role of
  *   `DATABASE_URL`, the tenant and system transaction runners, and the `Idempotency-Key`
  *   interceptor for the routes marked `@Idempotent()`. The pool closes on shutdown.
@@ -38,9 +42,10 @@ import { PlatformModule } from './modules/platform/platform.module.js';
  *   `dlq.<consumer>.<subject>`. The copy of a restricted event keeps its headers only
  *   (`restrictedDeadLetterPayload: 'drop'`, the default of the kit, stated here on purpose): its
  *   body may hold a single-use code, which would otherwise stay 30 days in `EVENTS_DLQ`.
- *   `restrictedEvents` stays unset until the contracts define the restricted events this service
- *   consumes. The service publishes and consumes nothing yet, since `@cadenway/contracts` defines
- *   no event of its own.
+ *   `restrictedEvents` lists `RESTRICTED_EVENT_NAMES` of the identity-service events of
+ *   `@cadenway/contracts` (`one-time-code.issued.v1`): their consumers read `EVENTS_RESTRICTED` on
+ *   `restricted.<name>`. The service publishes nothing yet: `@cadenway/contracts` defines no event
+ *   of its own.
  * - `OutboxModule`: the outbox writer, the PostgreSQL deduplicator and the relay, which polls
  *   `outbox_events` every second in a system transaction and publishes the pending rows. It runs in
  *   every replica; `for update skip locked` keeps two of them from publishing the same row.
@@ -53,13 +58,18 @@ import { PlatformModule } from './modules/platform/platform.module.js';
  *   agent only waits for the new container to be healthy before it stops the old one. A delay would
  *   lengthen every stop, under the 10 second default grace period of Docker, without moving any
  *   request away; set it above the probe interval of a proxy if one ever routes on readiness.
+ * - `JobsModule`: the durable jobs of `@cadenway/nest-jobs`, on pg-boss in the `pgboss` schema of
+ *   this service's own database, as the application role of `DATABASE_URL`, with a pool of two
+ *   connections of its own. `src/migrate.ts` provisions the schema and the queues of
+ *   `src/config/job-queues.ts` as the migrator role; the start-up fails while they are missing.
+ *   Running jobs get 30 seconds to finish at shutdown.
  * - `PlatformModule`: the owner of the kit tables in the migrations of the service.
+ * - `EmailModule`: the e-mails that carry a single-use code (`src/modules/email/MODULE.md`).
  *
  * Business modules under `src/modules/` are registered here as they are created.
  */
 @Module({
   imports: [
-    ConfigModule.forRoot({ schema: appConfigSchema, eager: false }),
     DatabaseModule.forRootAsync({
       inject: [CONFIG],
       useFactory: (config: AppConfig) => ({
@@ -78,9 +88,17 @@ import { PlatformModule } from './modules/platform/platform.module.js';
         manageStreams: false,
         deadLetterWorker: true,
         restrictedDeadLetterPayload: 'drop',
+        restrictedEvents: RESTRICTED_EVENT_NAMES,
       }),
     }),
     OutboxModule.forRoot(),
+    JobsModule.forRootAsync({
+      inject: [CONFIG],
+      useFactory: (config: AppConfig) => ({
+        connection: { connectionString: config.DATABASE_URL },
+        queues: jobQueues,
+      }),
+    }),
     HealthModule.forRootAsync({
       inject: [DATABASE_POOL, MessagingConnection],
       useFactory: (pool: PostgresProbe, connection: MessagingConnection) => ({
@@ -89,6 +107,7 @@ import { PlatformModule } from './modules/platform/platform.module.js';
       }),
     }),
     PlatformModule,
+    EmailModule,
   ],
 })
 export class AppModule {}

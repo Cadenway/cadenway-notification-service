@@ -46,7 +46,8 @@ nothing is appended.
 ## Events consumed
 
 None. `processed_events` and `event_versions` record what the handlers of the business modules
-consumed, through the PostgreSQL deduplicator of `OutboxModule`; no handler exists yet.
+consumed, through the PostgreSQL deduplicator of `OutboxModule`: today the handler of
+`one-time-code.issued.v1` of the email module.
 
 ## Invariants
 

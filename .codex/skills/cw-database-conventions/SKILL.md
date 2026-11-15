@@ -43,7 +43,8 @@ same in the ten services. `cw-expand-contract-migrations` covers how a schema ch
 ## Connections and timeouts
 
 - A pool of 5 connections per service: twelve backends share one PostgreSQL, and pools of 10 would
-  exceed its default of 100 connections.
+  exceed its default of 100 connections. `JobsModule` of `@cadenway/nest-jobs` adds a pool of 2 of
+  its own, so this service holds 7 at most.
 - `statement_timeout`, `lock_timeout` and `idle_in_transaction_session_timeout` are set per role,
   not per query.
 
@@ -58,11 +59,19 @@ on a table that declares a policy but never forces it: every migration that crea
 of a business module or of the kit, adds `ALTER TABLE "<table>" FORCE ROW LEVEL SECURITY;` by hand,
 as `migrations/0000_platform_tables.sql` does.
 
+## Tables without an organization
+
+A table whose rows belong to no organization (an account, the newsletter) has no `organization_id`.
+When it holds personal data or a secret, it still enables and forces row-level security, with a
+policy that admits the system runner only (`current_setting('app.system_access', true) = 'on'`):
+no tenant transaction can read it. `code_email_deliveries` and `pending_code_emails` of the email
+module are the first; `test/code-email.int-spec.ts` checks that a tenant transaction sees none of
+their rows.
+
 ## Not there yet
 
-No business table exists yet. The two roles exist in cadenway-ops (`docs/database.md` there) and in
-`compose.dev.yaml`; `test/service-wiring.int-spec.ts` proves on the kit tables that the policies are
-forced, that one organization cannot read or write another's rows, and that the application role
-runs no DDL and cannot reach the migration journal. The same test for each business table, and the
-linting of migrations, arrive with the first business module. Until then these conventions are
-applied by review.
+The two roles exist in cadenway-ops (`docs/database.md` there) and in `compose.dev.yaml`;
+`test/service-wiring.int-spec.ts` proves that the policies of every table are forced, on the kit
+tables that one organization cannot read or write another's rows, and that the application role
+runs no DDL and cannot reach the migration journal. The linting of migrations is not in place:
+until then these conventions are applied by review.

@@ -9,11 +9,13 @@ configuration is validated when the application is created, a failed start-up is
 the standard error, it writes JSON log lines, starts OpenTelemetry before the application, requires
 the internal token on every route but the health probes, connects to NATS as the `notification`
 user, runs the outbox relay and the dead-letter worker of the platform, and its readiness checks
-PostgreSQL and NATS. The one migration creates the tables of the service kit, owned by the platform
-module (`src/modules/platform/MODULE.md`). No business code, route or event exists yet:
-`@cadenway/contracts` defines no event of this service, so nothing is published or consumed. The
-target architecture in this guide is what they must follow. No e-mail is sent yet: `SMTP_HOST`,
-`SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` and `MAIL_FROM` are set for the e-mail sender.
+PostgreSQL and NATS. The first migration creates the tables of the service kit, owned by the
+platform module (`src/modules/platform/MODULE.md`). The email module (`src/modules/email/MODULE.md`)
+consumes `one-time-code.issued.v1` of identity-service from `EVENTS_RESTRICTED` and sends the
+"Confirmation de l’adresse" and "Code de connexion" e-mails through a durable job of
+`@cadenway/nest-jobs` and the SMTP server of the configuration; its migration creates its send log.
+No route exists yet, and `@cadenway/contracts` defines no event of this service, so nothing is
+published. The target architecture in this guide is what the next modules must follow.
 
 The commands below are the documented workflow. Inspect the repository's actual manifests and files before running them, and report unavailable checks rather than inventing replacements. Run Git, pnpm, build, and test commands with this repository as the working directory, never from the parent workspace.
 
@@ -50,6 +52,11 @@ Requirements: Node.js LTS and pnpm (versions in `package.json`), and Docker.
    pnpm migration:run                          # as notification_migrator; again after a pull that adds one
    pnpm start:dev                              # http://localhost:3016/health/ready
    ```
+
+   `pnpm migration:run` applies the migrations, then provisions the `pgboss` schema and the queues
+   of `src/config/job-queues.ts` for `notification_app`. `pnpm start:dev` compiles the e-mail
+   templates once before it watches the sources: run `pnpm build:emails` after changing one. The
+   e-mails land in the Mailpit of `compose.dev.yaml`, on http://localhost:8025.
 
    `compose.dev.yaml` gives PostgreSQL the two roles of cadenway-ops: `notification_migrator` owns
    the database and runs the DDL, `notification_app` runs the service under row-level security, on
@@ -94,9 +101,10 @@ each value comes from on a server.
 | `OTEL_EXPORTER_OTLP_ENDPOINT`         | `src/telemetry.ts`    | OTLP over HTTP; unset, nothing leaves the process                        |
 | `NATS_URL`                            | The service           | `nats://` URL of the broker                                              |
 | `NATS_USER`, `NATS_PASSWORD`          | The service           | User `notification` and its password; inbox prefix `_INBOX.notification` |
-| `SMTP_HOST`, `SMTP_PORT`              | Nothing yet           | The SMTP server; Mailpit locally (`localhost`, `1025`)                   |
-| `SMTP_USER`, `SMTP_PASSWORD`          | Nothing yet           | The SMTP account; empty for Mailpit, a secret on a server                |
-| `MAIL_FROM`                           | Nothing yet           | Sender address; `no-reply@cadenway.localhost` locally                    |
+| `SMTP_HOST`, `SMTP_PORT`              | The service           | The SMTP server; Mailpit locally (`localhost`, `1025`)                   |
+| `SMTP_USER`, `SMTP_PASSWORD`          | The service           | The SMTP account, set together; empty for Mailpit, a secret on a server  |
+| `MAIL_FROM`                           | The service           | Sender address; `no-reply@cadenway.localhost` locally                    |
+| `WEB_APP_URL`                         | The service           | Origin of the web app for the links of the e-mails; local stack if unset |
 
 ### Calling the service locally
 
@@ -160,6 +168,13 @@ cadenway-ops, that the dead-letter worker copies a message another consumer gave
 `EVENTS_DLQ`, without the body of a restricted one, the health routes (readiness 503 while NATS or
 PostgreSQL is down and from the start of a shutdown, back to 200 once NATS returns) and the internal
 token. It moves to the fixtures of `@cadenway/nest-testing` once that package exports them.
+
+`test/code-email.int-spec.ts` starts its own throwaway project, with Mailpit. It publishes
+`one-time-code.issued.v1` as the `identity` user of the broker and checks that the e-mail with the
+code reaches the HTTP API of Mailpit, with its headers; that a redelivered event sends one e-mail,
+and that an expired code and an address-change code send none; that no user but `notification` can
+read `EVENTS_RESTRICTED`; that no tenant transaction sees the send log; and that no log line holds a
+code or the address of the recipient.
 
 ## Minimum checks by change
 

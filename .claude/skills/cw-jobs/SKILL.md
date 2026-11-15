@@ -37,7 +37,16 @@ restart, and ESLint refuses the first two.
 - Events between services: they go through the outbox (`cw-outbox-and-events`).
 - Work on another service's data: a job only touches this service's database.
 
-## Not there yet
+## Wiring
 
-`@cadenway/nest-jobs` is the fourth package of cadenway-service-kit and is not published yet. Until
-it is installed, no job is written: do not depend on `pg-boss` directly.
+- The queues are declared once, in `src/config/job-queues.ts`, with their retries, timeouts and
+  retention; the list goes to `provisionJobs` and to `JobsModule`. A payload holds ids only, never
+  personal data or a secret: the data stays in a table of this service that the handler reads
+  (`email.send-code` carries the id of a delivery).
+- `src/migrate.ts` runs `provisionJobs` as the migrator role after the migrations: it installs the
+  `pgboss` schema and the queues and grants `notification_app` its runtime access. The service
+  refuses to start while a declared queue is missing.
+- `JobsModule` (`src/app.module.ts`) runs as the application role, with a pool of two connections
+  of its own. Enqueue with `JobsService.enqueue(tx, ...)` and the scope of a transaction runner of
+  the kit; register a handler with `JobsService.work` from `onApplicationBootstrap` of an
+  `api/messaging/<name>.handler.ts`. Never import `pg-boss` directly.

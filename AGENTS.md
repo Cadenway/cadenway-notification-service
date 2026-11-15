@@ -22,14 +22,14 @@ The structure and workflows below describe the bootstrap target. Check the check
 
 cadenway-notification-service owns everything that tells someone something: in the app, by email or on mobile. NestJS, its own PostgreSQL database (one database with a migrator role and an application role in the shared PostgreSQL of the VPS), events over NATS JetStream through `@cadenway/nest-messaging`, internal REST for the API gateway. Local port 3016.
 
-|            |                                                                                                                                                                           |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Data       | Notifications and their read state, reminders and their due time, preferences (7 events × 3 channels, digest, Do not disturb), delivery log, the 13 email templates.      |
-| API        | Inbox (list, mark read), reminders (create, snooze, mark done), preferences.                                                                                              |
-| Emits      | `notification.created`, `reminder.due`                                                                                                                                    |
-| Listens to | `task.assigned`, `comment.created` (mentions), `approval.requested`, `member.invited` (invitation email), `user.signed-up` (verification code), `quota.threshold-reached` |
-| External   | Email provider, mobile push.                                                                                                                                              |
-| Phase      | First version                                                                                                                                                             |
+|            |                                                                                                                                                                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Data       | Notifications and their read state, reminders and their due time, preferences (7 events × 3 channels, digest, Do not disturb), delivery log, the 13 email templates.                                                                       |
+| API        | Inbox (list, mark read), reminders (create, snooze, mark done), preferences.                                                                                                                                                               |
+| Emits      | `notification.created`, `reminder.due`                                                                                                                                                                                                     |
+| Listens to | `task.assigned`, `comment.created` (mentions), `approval.requested`, `member.invited` (invitation email), `one-time-code.issued` (sign-up and sign-in codes, restricted), `user.signed-up` (profile projection), `quota.threshold-reached` |
+| External   | Email provider, mobile push.                                                                                                                                                                                                               |
+| Phase      | First version                                                                                                                                                                                                                              |
 
 A scheduled job sends reminders, digests and due-date alerts.
 

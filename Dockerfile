@@ -16,6 +16,9 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     --mount=type=secret,id=npmrc,target=/root/.npmrc,required=true \
     pnpm install --frozen-lockfile --ignore-scripts --store-dir /pnpm/store
 COPY nest-cli.json tsconfig.json tsconfig.build.json ./
+# The build compiles the e-mail templates (MJML, then Handlebars) before the sources; only the
+# generated module reaches dist/, and the compilers, development dependencies, stay in this stage.
+COPY scripts ./scripts
 COPY src ./src
 RUN pnpm build
 
