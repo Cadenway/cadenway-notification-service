@@ -90,21 +90,21 @@ value. `.env.example` holds a working local value for each;
 [cadenway-ops](https://github.com/Cadenway/cadenway-ops) (`docs/service-environment.md`) says where
 each value comes from on a server.
 
-| Variable                              | Read by               | Value                                                                    |
-| ------------------------------------- | --------------------- | ------------------------------------------------------------------------ |
-| `PORT`                                | The service           | `3016`                                                                   |
-| `NODE_ENV`, `LOG_LEVEL`, `LOG_PRETTY` | The service           | `production`, `info` and `false` when unset                              |
-| `DATABASE_URL`                        | The service           | Application role `notification_app`                                      |
-| `MIGRATION_DATABASE_URL`              | `src/migrate.ts` only | Migrator role `notification_migrator`; required once a migration exists  |
-| `INTERNAL_TOKEN_AUDIENCE`             | The service           | `notification-service`                                                   |
-| `INTERNAL_TOKEN_TRUSTED_ISSUERS`      | The service           | One line of JSON: the public keys of each backend allowed to call it     |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`         | `src/telemetry.ts`    | OTLP over HTTP; unset, nothing leaves the process                        |
-| `NATS_URL`                            | The service           | `nats://` URL of the broker                                              |
-| `NATS_USER`, `NATS_PASSWORD`          | The service           | User `notification` and its password; inbox prefix `_INBOX.notification` |
-| `SMTP_HOST`, `SMTP_PORT`              | The service           | The SMTP server; Mailpit locally (`localhost`, `1025`)                   |
-| `SMTP_USER`, `SMTP_PASSWORD`          | The service           | The SMTP account, set together; empty for Mailpit, a secret on a server  |
-| `MAIL_FROM`                           | The service           | Sender address; `no-reply@cadenway.localhost` locally                    |
-| `WEB_APP_URL`                         | The service           | Origin of the web app for the links of the e-mails; local stack if unset |
+| Variable                              | Read by               | Value                                                                                                                                                             |
+| ------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                | The service           | `3016`                                                                                                                                                            |
+| `NODE_ENV`, `LOG_LEVEL`, `LOG_PRETTY` | The service           | `production`, `info` and `false` when unset                                                                                                                       |
+| `DATABASE_URL`                        | The service           | Application role `notification_app`                                                                                                                               |
+| `MIGRATION_DATABASE_URL`              | `src/migrate.ts` only | Migrator role `notification_migrator`; required once a migration exists. The GitOps agent passes it to the migration container only, never to the running service |
+| `INTERNAL_TOKEN_AUDIENCE`             | The service           | `notification-service`                                                                                                                                            |
+| `INTERNAL_TOKEN_TRUSTED_ISSUERS`      | The service           | One line of JSON: the public keys of each backend allowed to call it                                                                                              |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`         | `src/telemetry.ts`    | OTLP over HTTP; unset, nothing leaves the process                                                                                                                 |
+| `NATS_URL`                            | The service           | `nats://` URL of the broker                                                                                                                                       |
+| `NATS_USER`, `NATS_PASSWORD`          | The service           | User `notification` and its password; inbox prefix `_INBOX.notification`                                                                                          |
+| `SMTP_HOST`, `SMTP_PORT`              | The service           | The SMTP server; Mailpit locally (`localhost`, `1025`)                                                                                                            |
+| `SMTP_USER`, `SMTP_PASSWORD`          | The service           | The SMTP account, set together; empty for Mailpit, a secret on a server                                                                                           |
+| `MAIL_FROM`                           | The service           | Sender address; `no-reply@cadenway.localhost` locally                                                                                                             |
+| `WEB_APP_URL`                         | The service           | Origin of the web app for the links of the e-mails; local stack if unset                                                                                          |
 
 ### Calling the service locally
 
