@@ -64,6 +64,19 @@ const platformTables = [
   'processed_events',
 ] as const;
 
+/** Every table of the service: the platform tables and those of the email module. */
+const serviceTables = [
+  'code_email_deliveries',
+  'event_versions',
+  'idempotency_keys',
+  'outbox_events',
+  'pending_code_emails',
+  'processed_events',
+] as const;
+
+/** The migrations of the service, all applied by the migrator. */
+const migrationCount = 2;
+
 /**
  * Runs `docker compose` on the throwaway project.
  *
@@ -343,6 +356,10 @@ describe('notification-service wiring', () => {
       'INTERNAL_TOKEN_TRUSTED_ISSUERS',
       JSON.stringify({ 'api-gateway': [gateway.publicJwk] }),
     );
+    // No e-mail is sent here: the SMTP server is never reached (test/code-email.int-spec.ts sends).
+    vi.stubEnv('SMTP_HOST', '127.0.0.1');
+    vi.stubEnv('SMTP_PORT', '2525');
+    vi.stubEnv('MAIL_FROM', 'no-reply@cadenway.localhost');
     // Every pass of the relay, from the first one, which starts with the application.
     relayPasses = vi.spyOn(OutboxRelay.prototype, 'publishPending');
 
@@ -358,6 +375,7 @@ describe('notification-service wiring', () => {
     app = await createApplication(ProbedApplicationModule, {
       service: 'notification-service',
       config,
+      provideConfig: true,
       internalToken: {
         verifier: {
           audience: config.INTERNAL_TOKEN_AUDIENCE,
@@ -385,7 +403,7 @@ describe('notification-service wiring', () => {
     }
   });
 
-  it('applies its migration as the migrator role, which owns the platform tables', async () => {
+  it('applies its migrations as the migrator role, which owns the tables', async () => {
     const tables = await migrator.query<{ tablename: string; tableowner: string }>(
       `select tablename, tableowner from pg_tables where schemaname = 'public' order by tablename`,
     );
@@ -394,9 +412,9 @@ describe('notification-service wiring', () => {
     );
 
     expect(tables.rows).toEqual(
-      platformTables.map((tablename) => ({ tablename, tableowner: 'notification_migrator' })),
+      serviceTables.map((tablename) => ({ tablename, tableowner: 'notification_migrator' })),
     );
-    expect(journal.rows).toEqual([{ applied: 1 }]);
+    expect(journal.rows).toEqual([{ applied: migrationCount }]);
   });
 
   it('applies nothing when the migrator runs again', async () => {
@@ -405,10 +423,10 @@ describe('notification-service wiring', () => {
     const journal = await migrator.query<{ applied: number }>(
       'select count(*)::int as applied from drizzle.__drizzle_migrations',
     );
-    expect(journal.rows).toEqual([{ applied: 1 }]);
+    expect(journal.rows).toEqual([{ applied: migrationCount }]);
   });
 
-  it('forces row-level security on the tables that carry an organization', async () => {
+  it('forces row-level security on the tables that carry an organization or a code', async () => {
     const tables = await migrator.query<{
       relname: string;
       relrowsecurity: boolean;
@@ -424,15 +442,22 @@ describe('notification-service wiring', () => {
     );
 
     expect(tables.rows).toEqual([
+      { relname: 'code_email_deliveries', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'event_versions', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'idempotency_keys', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'outbox_events', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'pending_code_emails', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'processed_events', relrowsecurity: false, relforcerowsecurity: false },
     ]);
     expect(policies.rows).toEqual([
+      {
+        tablename: 'code_email_deliveries',
+        policyname: 'code_email_deliveries_system_access',
+      },
       { tablename: 'event_versions', policyname: 'event_versions_organization_isolation' },
       { tablename: 'idempotency_keys', policyname: 'idempotency_keys_organization_isolation' },
       { tablename: 'outbox_events', policyname: 'outbox_events_organization_isolation' },
+      { tablename: 'pending_code_emails', policyname: 'pending_code_emails_system_access' },
     ]);
   });
 
@@ -601,7 +626,7 @@ describe('notification-service wiring', () => {
     const journal = await migrator.query<{ applied: number }>(
       'select count(*)::int as applied from drizzle.__drizzle_migrations',
     );
-    expect(journal.rows).toEqual([{ applied: 1 }]);
+    expect(journal.rows).toEqual([{ applied: migrationCount }]);
   });
 
   it('runs the outbox relay from the start, and it stays healthy against an empty outbox', async () => {

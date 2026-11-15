@@ -17,6 +17,9 @@ describe('appConfigSchema', () => {
     NATS_PASSWORD: 'notification',
     INTERNAL_TOKEN_AUDIENCE: 'notification-service',
     INTERNAL_TOKEN_TRUSTED_ISSUERS: trustedIssuers,
+    SMTP_HOST: 'localhost',
+    SMTP_PORT: '1025',
+    MAIL_FROM: 'no-reply@cadenway.localhost',
   };
 
   it('reads the variables of the service with the defaults of the kit', () => {
@@ -40,6 +43,10 @@ describe('appConfigSchema', () => {
           },
         ],
       },
+      SMTP_HOST: 'localhost',
+      SMTP_PORT: 1025,
+      MAIL_FROM: 'no-reply@cadenway.localhost',
+      WEB_APP_URL: 'http://app.cadenway.localhost',
     });
   });
 
@@ -64,6 +71,9 @@ describe('appConfigSchema', () => {
           'NATS_URL',
           'INTERNAL_TOKEN_AUDIENCE',
           'INTERNAL_TOKEN_TRUSTED_ISSUERS',
+          'SMTP_HOST',
+          'SMTP_PORT',
+          'MAIL_FROM',
         ]),
       );
     }
@@ -97,6 +107,57 @@ describe('appConfigSchema', () => {
     expect(() =>
       loadConfig(appConfigSchema, { ...complete, INTERNAL_TOKEN_TRUSTED_ISSUERS: withPrivateKey }),
     ).toThrow(/INTERNAL_TOKEN_TRUSTED_ISSUERS/u);
+  });
+
+  it('reads the SMTP account when both its user and its password are set', () => {
+    expect(
+      loadConfig(appConfigSchema, {
+        ...complete,
+        SMTP_USER: 'notification',
+        SMTP_PASSWORD: 's3cret',
+      }),
+    ).toMatchObject({ SMTP_USER: 'notification', SMTP_PASSWORD: 's3cret' });
+  });
+
+  it('treats an empty SMTP account, as in .env.example, as no account', () => {
+    const config: Readonly<Record<string, unknown>> = loadConfig(appConfigSchema, {
+      ...complete,
+      SMTP_USER: '',
+      SMTP_PASSWORD: '',
+    });
+
+    expect(config).not.toHaveProperty('SMTP_USER');
+    expect(config).not.toHaveProperty('SMTP_PASSWORD');
+  });
+
+  it('refuses an SMTP user without its password, and the reverse, without printing them', () => {
+    expect(() => loadConfig(appConfigSchema, { ...complete, SMTP_USER: 'notification' })).toThrow(
+      /SMTP_PASSWORD: required, not set/u,
+    );
+    expect(() => loadConfig(appConfigSchema, { ...complete, SMTP_PASSWORD: 's3cret' })).toThrow(
+      /SMTP_USER: required, not set/u,
+    );
+    expect(() => loadConfig(appConfigSchema, { ...complete, SMTP_PASSWORD: 's3cret' })).not.toThrow(
+      /s3cret/u,
+    );
+  });
+
+  it('refuses an SMTP port out of range and a sender that is not an address', () => {
+    expect(() => loadConfig(appConfigSchema, { ...complete, SMTP_PORT: '70000' })).toThrow(
+      /SMTP_PORT/u,
+    );
+    expect(() => loadConfig(appConfigSchema, { ...complete, MAIL_FROM: 'Cadenway' })).toThrow(
+      /MAIL_FROM: Expected the sender e-mail address/u,
+    );
+  });
+
+  it('reads the origin of the web application without its trailing slash', () => {
+    expect(
+      loadConfig(appConfigSchema, { ...complete, WEB_APP_URL: 'https://app.cadenway.fr/' }),
+    ).toMatchObject({ WEB_APP_URL: 'https://app.cadenway.fr' });
+    expect(() =>
+      loadConfig(appConfigSchema, { ...complete, WEB_APP_URL: 'ftp://app.cadenway.fr' }),
+    ).toThrow(/WEB_APP_URL/u);
   });
 
   it('does not read the migrator URL: the running service never needs it', () => {

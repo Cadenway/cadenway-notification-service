@@ -8,6 +8,13 @@
       "when": 1794752999722,
       "tag": "0000_platform_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794768146152,
+      "tag": "0001_code_email_deliveries",
+      "breakpoints": true
     }
   ]
 }

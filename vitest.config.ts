@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // Compiles the e-mail templates once per run, so the specs render what the image ships.
+    globalSetup: ['./scripts/build-email-templates.mjs'],
     projects: [
       {
         extends: true,
@@ -24,6 +26,7 @@ export default defineConfig({
       exclude: [
         'src/**/*.spec.ts',
         'src/**/*.int-spec.ts',
+        'src/**/testing/**',
         'src/main.ts',
         'src/migrate.ts',
         'src/telemetry.ts',

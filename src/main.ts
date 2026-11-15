@@ -13,12 +13,14 @@ import type { AppConfig } from './config/app-config.js';
 // a port in use) into one JSON line on the standard error and exit code 1. Every route but the
 // health probes requires an internal token whose `aud` is INTERNAL_TOKEN_AUDIENCE and whose
 // signature verifies with a key of INTERNAL_TOKEN_TRUSTED_ISSUERS; the organization of a request
-// comes from that token only.
+// comes from that token only. The environment is validated once, here: `provideConfig` hands the
+// result to AppModule as CONFIG.
 await runApplication({ service: 'notification-service' }, async (): Promise<void> => {
   const config: Readonly<AppConfig> = loadConfig(appConfigSchema);
   const app: NestExpressApplication = await createApplication(AppModule, {
     service: 'notification-service',
     config,
+    provideConfig: true,
     internalToken: {
       verifier: {
         audience: config.INTERNAL_TOKEN_AUDIENCE,

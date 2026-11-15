@@ -1,6 +1,9 @@
 # Generated trees and files owned by a tool.
 dist/
 coverage/
+src/modules/email/infrastructure/templates/generated/
+# Plain-text e-mail templates: their line breaks and indentation are the e-mail itself.
+src/modules/email/infrastructure/templates/**/*.hbs
 pnpm-lock.yaml
 CHANGELOG.md
 migrations/

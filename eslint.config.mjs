@@ -8,7 +8,16 @@ import documentation from './rules/documentation.mjs';
 import memberRegions from './rules/member-regions.mjs';
 
 export default defineConfig(
-  globalIgnores(['dist/', 'coverage/', 'migrations/', 'docs/', '.claude/', '.codex/']),
+  globalIgnores([
+    'dist/',
+    'coverage/',
+    'migrations/',
+    'docs/',
+    '.claude/',
+    '.codex/',
+    // The e-mail templates compiled by scripts/build-email-templates.mjs.
+    'src/modules/email/infrastructure/templates/generated/',
+  ]),
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,

@@ -1,0 +1,10 @@
+<mj-section padding="24px 8px 0 8px">
+  <mj-column>
+    <mj-text align="center" color="#5f616a" font-size="12px" line-height="20px" padding="0 0 8px 0">
+      E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.
+    </mj-text>
+    <mj-text align="center" color="#5f616a" font-size="12px" line-height="20px">
+      Cadenway · 12 rue de la Charité, 69002 Lyon
+    </mj-text>
+  </mj-column>
+</mj-section>

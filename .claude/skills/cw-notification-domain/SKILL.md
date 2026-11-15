@@ -15,7 +15,7 @@ Everything that tells someone something: in the app, by email or on mobile.
 
 **Events emitted**: `notification.created`, `reminder.due`.
 
-**Events consumed**: `task.assigned`, `comment.created` (mentions), `approval.requested`, `member.invited` (invitation email), `user.signed-up` (verification code), `quota.threshold-reached`.
+**Events consumed**: `task.assigned`, `comment.created` (mentions), `approval.requested`, `member.invited` (invitation email), `one-time-code.issued` (sign-up and sign-in codes, restricted), `user.signed-up` (profile projection), `quota.threshold-reached`.
 
 **External systems**: Email provider, mobile push.
 
@@ -25,13 +25,13 @@ Everything that tells someone something: in the app, by email or on mobile.
 
 - Security emails are always sent; notification emails respect preferences and Do not disturb.
 - Reminder presets: in 1 hour, this afternoon, tomorrow, next week, the day before the due date, or a chosen date and time (no time in the past).
-- Every email carries a manage-notifications link and List-Unsubscribe.
+- Every email carries `List-Unsubscribe`, to Compte › Notifications; a notification email also shows the manage-notifications link in its footer. The security emails of the mockup show none: they cannot be turned off.
 
 ## Notes
 
 A scheduled job sends reminders, digests and due-date alerts.
 
-Decided: cadenway-automation-service calls this service's API for its notify action. The newsletter subscription and the contact form of the public site are received here, in tables without `organization_id`. The mobile channel is stored as a preference and nothing is sent on it while no mobile application exists. This service keeps a projection of user profiles (name, email, time zone, language) from `user.profile-updated` and `user.deleted`. The security emails (sign-in code, reset link, password changed, new sign-in, MFA enabled, account deletion) are triggered by a dedicated family of cadenway-identity-service events; an event carries the single-use, short-lived code or link when the email needs one. This service is the only subscriber allowed on their NATS subjects and keeps the code or link out of its logs and of its send log.
+Decided: cadenway-automation-service calls this service's API for its notify action. The newsletter subscription and the contact form of the public site are received here, in tables without `organization_id`. The mobile channel is stored as a preference and nothing is sent on it while no mobile application exists. This service keeps a projection of user profiles (name, email, time zone, language) from `user.profile-updated` and `user.deleted`. The security emails (sign-in code, reset link, password changed, new sign-in, MFA enabled, account deletion) are triggered by a dedicated family of cadenway-identity-service events; an event carries the single-use, short-lived code or link when the email needs one. This service is the only subscriber allowed on their NATS subjects and keeps the code or link out of its logs and of its send log. The first of them, `one-time-code.issued.v1`, carries the 6-digit code of the sign-up (`email-verification`) and of the sign-in without a password (`sign-in`), valid 10 minutes, on the restricted stream `EVENTS_RESTRICTED`; `user.signed-up.v1` carries no code. The address confirmation uses that code, not the link of the "Confirmation de l’adresse" artboard (decision of the auth walking skeleton).
 
 Everything above comes from the [repositories document](https://claude.ai/artifact/BPinmYxoF3mbK8w9BMB43N) and the
 [integration guide](https://claude.ai/artifact/CpJHVCiFfF9j3KbHQ2S1Et). When the mockup and this skill disagree, the mockup wins and
