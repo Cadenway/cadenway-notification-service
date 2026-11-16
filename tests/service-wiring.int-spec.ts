@@ -356,7 +356,7 @@ describe('notification-service wiring', () => {
       'INTERNAL_TOKEN_TRUSTED_ISSUERS',
       JSON.stringify({ 'api-gateway': [gateway.publicJwk] }),
     );
-    // No e-mail is sent here: the SMTP server is never reached (test/code-email.int-spec.ts sends).
+    // No e-mail is sent here: the SMTP server is never reached (tests/code-email.int-spec.ts sends).
     vi.stubEnv('SMTP_HOST', '127.0.0.1');
     vi.stubEnv('SMTP_PORT', '2525');
     vi.stubEnv('MAIL_FROM', 'no-reply@cadenway.localhost');

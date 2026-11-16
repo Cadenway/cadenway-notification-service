@@ -69,5 +69,5 @@ whose `chokidar@4.0.3` is refused by the `trustPolicy` of `pnpm-workspace.yaml`,
 
 - A template test renders with the mockup fixtures (Atelier Nord, Camille Martin, CAD-482) and
   checks the subject, the text part and the presence of the unsubscribe headers.
-- `test/code-email.int-spec.ts` sends through a disposable Mailpit (`compose.dev.yaml`) and reads
+- `tests/code-email.int-spec.ts` sends through a disposable Mailpit (`compose.dev.yaml`) and reads
   the email back from its HTTP API.

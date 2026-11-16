@@ -10,8 +10,9 @@ import {
   InMemoryCodeEmailDeliveries,
   RecordingEmailSender,
 } from '../../../../ports/outbound/persistence/code-email/code-email-deliveries.port.fixture.js';
-import { AttemptAbandonedError, SendCodeEmail } from './send-code-email.use-case.js';
-import type { SendCodeEmailResult } from './send-code-email.output.js';
+import { AttemptAbandonedError } from '../../../../models/code-email/attempt-abandoned-error.model.js';
+import { SendCodeEmail } from './send-code-email.use-case.js';
+import type { SendCodeEmailOutput } from './send-code-email.output.js';
 
 /**
  * Class EchoRenderer
@@ -77,7 +78,7 @@ describe('SendCodeEmail', () => {
   });
 
   it('sends a queued e-mail as a security e-mail, then marks it sent and deletes its content', async () => {
-    const result: SendCodeEmailResult = await useCase.execute({ deliveryId, lastAttempt: false });
+    const result: SendCodeEmailOutput = await useCase.execute({ deliveryId, lastAttempt: false });
 
     expect(result).toEqual({ outcome: 'sent', template: 'email-verification' });
     expect(sender.sent).toEqual([
@@ -97,7 +98,7 @@ describe('SendCodeEmail', () => {
   it('does not send twice: a job that runs again finds the e-mail already sent', async () => {
     await useCase.execute({ deliveryId, lastAttempt: false });
 
-    const again: SendCodeEmailResult = await useCase.execute({ deliveryId, lastAttempt: false });
+    const again: SendCodeEmailOutput = await useCase.execute({ deliveryId, lastAttempt: false });
 
     expect(again).toEqual({ outcome: 'already-handled', status: 'sent' });
     expect(sender.sent).toHaveLength(1);
@@ -106,7 +107,7 @@ describe('SendCodeEmail', () => {
   it('skips a code that expired while its job waited', async () => {
     clock.instant = new Date('2026-11-09T13:17:00.000Z');
 
-    const result: SendCodeEmailResult = await useCase.execute({ deliveryId, lastAttempt: false });
+    const result: SendCodeEmailOutput = await useCase.execute({ deliveryId, lastAttempt: false });
 
     expect(result).toEqual({ outcome: 'skipped', reason: 'expired' });
     expect(sender.sent).toEqual([]);
@@ -140,7 +141,7 @@ describe('SendCodeEmail', () => {
   it('marks failed a queued delivery whose content is gone, without sending', async () => {
     deliveries.contents.clear();
 
-    const result: SendCodeEmailResult = await useCase.execute({ deliveryId, lastAttempt: false });
+    const result: SendCodeEmailOutput = await useCase.execute({ deliveryId, lastAttempt: false });
 
     expect(result).toEqual({ outcome: 'failed' });
     expect(sender.sent).toEqual([]);
@@ -148,7 +149,7 @@ describe('SendCodeEmail', () => {
   });
 
   it('does nothing for a delivery that does not exist', async () => {
-    const result: SendCodeEmailResult = await useCase.execute({
+    const result: SendCodeEmailOutput = await useCase.execute({
       deliveryId: '01938f6e-0000-7000-8000-999999999999',
       lastAttempt: true,
     });

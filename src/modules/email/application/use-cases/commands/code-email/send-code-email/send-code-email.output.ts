@@ -3,7 +3,7 @@ import type { CodeEmailTemplate } from '../../../../../domain/value-objects/code
 import type { CodeEmailDeliveryStatus } from '../../../../models/code-email/code-email-delivery-status.model.js';
 
 /**
- * Type SendCodeEmailResult
+ * Type SendCodeEmailOutput
  *
  * @description
  * What the attempt did: `sent`, the SMTP server accepted the e-mail; `skipped`, it was not sent
@@ -12,7 +12,7 @@ import type { CodeEmailDeliveryStatus } from '../../../../models/code-email/code
  *
  * @type {{ readonly outcome: 'sent'; readonly template: CodeEmailTemplate } | { readonly outcome: 'skipped'; readonly reason: CodeEmailSkipReason } | { readonly outcome: 'failed' } | { readonly outcome: 'already-handled'; readonly status: CodeEmailDeliveryStatus } | { readonly outcome: 'missing' }}
  */
-export type SendCodeEmailResult =
+export type SendCodeEmailOutput =
   | { readonly outcome: 'sent'; readonly template: CodeEmailTemplate }
   | { readonly outcome: 'skipped'; readonly reason: CodeEmailSkipReason }
   | { readonly outcome: 'failed' }

@@ -9,7 +9,7 @@ import type { CodeEmailDeliveries } from '../../../../ports/outbound/persistence
 import type { CodeEmailQueue } from '../../../../ports/outbound/jobs/code-email/code-email-queue.port.js';
 import type { CodeEmailUnitOfWork } from '../../../../ports/outbound/persistence/code-email/code-email-unit-of-work.port.js';
 import type { RequestCodeEmailInput } from './request-code-email.input.js';
-import type { RequestCodeEmailResult } from './request-code-email.output.js';
+import type { RequestCodeEmailOutput } from './request-code-email.output.js';
 
 /**
  * Class RequestCodeEmail
@@ -105,18 +105,18 @@ export class RequestCodeEmail {
    * recipient is kept as `greetingName` cleans it: it was typed before the address was verified.
    *
    * @param {RequestCodeEmailInput} input - The issued code.
-   * @returns {Promise<RequestCodeEmailResult>} What became of it, once committed.
+   * @returns {Promise<RequestCodeEmailOutput>} What became of it, once committed.
    * @throws {InvalidOneTimeCodeError} When the code is not 6 digits.
    * @throws {InvalidCodeValidityError} When the code expires before it was issued.
    */
-  public async execute(input: RequestCodeEmailInput): Promise<RequestCodeEmailResult> {
+  public async execute(input: RequestCodeEmailInput): Promise<RequestCodeEmailOutput> {
     const code: OneTimeCode = OneTimeCode.of(input.code);
     const validity: CodeValidity = CodeValidity.between(input.issuedAt, input.expiresAt);
     const decision: CodeEmailDecision = decideCodeEmail(input.purpose, validity, this.clock.now());
     const skipReason: CodeEmailSkipReason | null =
       decision.kind === 'skip' ? decision.reason : null;
 
-    return this.unitOfWork.run(async (): Promise<RequestCodeEmailResult> => {
+    return this.unitOfWork.run(async (): Promise<RequestCodeEmailOutput> => {
       const deliveryId: string | null = await this.deliveries.record(
         {
           eventId: input.eventId,

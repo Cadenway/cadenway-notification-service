@@ -2,7 +2,7 @@ import type { JobsService } from '@cadenway/nest-jobs';
 import { Logger } from '@nestjs/common';
 import type { OnApplicationBootstrap } from '@nestjs/common';
 import type { ExpireCodeEmails } from '../../../../application/use-cases/commands/code-email/expire-code-emails/expire-code-emails.use-case.js';
-import type { ExpireCodeEmailsResult } from '../../../../application/use-cases/commands/code-email/expire-code-emails/expire-code-emails.output.js';
+import type { ExpireCodeEmailsOutput } from '../../../../application/use-cases/commands/code-email/expire-code-emails/expire-code-emails.output.js';
 
 /**
  * Class ExpireCodeEmailsHandler
@@ -122,7 +122,7 @@ export class ExpireCodeEmailsHandler implements OnApplicationBootstrap {
    * @returns {Promise<void>} Settles once the sweep is committed.
    */
   public async handle(): Promise<void> {
-    const result: ExpireCodeEmailsResult = await this.expireCodeEmails.execute();
+    const result: ExpireCodeEmailsOutput = await this.expireCodeEmails.execute();
     if (result.expired > 0) {
       this.logger.log({ expired: result.expired }, 'expired code e-mails settled');
     }

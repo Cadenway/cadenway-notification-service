@@ -57,7 +57,7 @@ const codes = {
   swept: '530219',
 } as const;
 
-/** Host port of NATS, fixed for the run like in test/service-wiring.int-spec.ts. */
+/** Host port of NATS, fixed for the run like in tests/service-wiring.int-spec.ts. */
 let natsHostPort = '0';
 
 /** Base URL of the HTTP API of Mailpit. */

@@ -65,13 +65,13 @@ A table whose rows belong to no organization (an account, the newsletter) has no
 When it holds personal data or a secret, it still enables and forces row-level security, with a
 policy that admits the system runner only (`current_setting('app.system_access', true) = 'on'`):
 no tenant transaction can read it. `code_email_deliveries` and `pending_code_emails` of the email
-module are the first; `test/code-email.int-spec.ts` checks that a tenant transaction sees none of
+module are the first; `tests/code-email.int-spec.ts` checks that a tenant transaction sees none of
 their rows.
 
 ## Not there yet
 
 The two roles exist in cadenway-ops (`docs/database.md` there) and in `compose.dev.yaml`;
-`test/service-wiring.int-spec.ts` proves that the policies of every table are forced, on the kit
+`tests/service-wiring.int-spec.ts` proves that the policies of every table are forced, on the kit
 tables that one organization cannot read or write another's rows, and that the application role
 runs no DDL and cannot reach the migration journal. The linting of migrations is not in place:
 until then these conventions are applied by review.

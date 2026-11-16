@@ -4,7 +4,7 @@ import { EventConsumers } from '@cadenway/nest-messaging';
 import { Injectable, Logger } from '@nestjs/common';
 import type { OnApplicationBootstrap } from '@nestjs/common';
 import { RequestCodeEmail } from '../../../../application/use-cases/commands/code-email/request-code-email/request-code-email.use-case.js';
-import type { RequestCodeEmailResult } from '../../../../application/use-cases/commands/code-email/request-code-email/request-code-email.output.js';
+import type { RequestCodeEmailOutput } from '../../../../application/use-cases/commands/code-email/request-code-email/request-code-email.output.js';
 
 /**
  * Constant HANDLER
@@ -120,7 +120,7 @@ export class OneTimeCodeIssuedHandler implements OnApplicationBootstrap {
    * @returns {Promise<void>} Settles once the delivery and its job are committed.
    */
   public async handle(payload: OneTimeCodeIssuedV1): Promise<void> {
-    const result: RequestCodeEmailResult = await this.requestCodeEmail.execute({
+    const result: RequestCodeEmailOutput = await this.requestCodeEmail.execute({
       eventId: payload.id,
       codeId: payload.codeId,
       userId: payload.userId,

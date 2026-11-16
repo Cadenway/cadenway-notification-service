@@ -3,35 +3,13 @@ import type { CodeEmailTemplate } from '../../../../../domain/value-objects/code
 import type { Clock } from '../../../../ports/outbound/time/code-email/clock.port.js';
 import type { CodeEmailDeliveries } from '../../../../ports/outbound/persistence/code-email/code-email-deliveries.port.js';
 import type { CodeEmailDelivery } from '../../../../models/code-email/code-email-delivery.model.js';
+import { AttemptAbandonedError } from '../../../../models/code-email/attempt-abandoned-error.model.js';
 import type { CodeEmailUnitOfWork } from '../../../../ports/outbound/persistence/code-email/code-email-unit-of-work.port.js';
 import type { EmailRenderer } from '../../../../ports/outbound/templates/code-email/email-renderer.port.js';
 import type { RenderedEmail } from '../../../../models/code-email/rendered-email.model.js';
 import type { EmailSender } from '../../../../ports/outbound/smtp/code-email/email-sender.port.js';
 import type { SendCodeEmailInput } from './send-code-email.input.js';
-import type { SendCodeEmailResult } from './send-code-email.output.js';
-
-/**
- * Class AttemptAbandonedError
- *
- * @description
- * The job system gave up on the attempt before the e-mail was handed to the SMTP server.
- */
-export class AttemptAbandonedError extends Error {
-  // #region Constructor
-  /**
-   * Constructor
-   *
-   * @description
-   * Names the error after its class.
-   *
-   * @constructor
-   */
-  public constructor() {
-    super('The attempt was abandoned before the e-mail was handed to the SMTP server.');
-    this.name = 'AttemptAbandonedError';
-  }
-  // #endregion
-}
+import type { SendCodeEmailOutput } from './send-code-email.output.js';
 
 /**
  * Class SendCodeEmail
@@ -145,11 +123,11 @@ export class SendCodeEmail {
    *
    * @param {SendCodeEmailInput} input - The delivery, whether this is its last attempt, and the
    * signal of the attempt.
-   * @returns {Promise<SendCodeEmailResult>} What the attempt did.
+   * @returns {Promise<SendCodeEmailOutput>} What the attempt did.
    * @throws {Error} When the e-mail cannot be rendered, the SMTP server is unreachable or refuses
    * it, or the attempt was abandoned, so that the job is tried again.
    */
-  public async execute(input: SendCodeEmailInput): Promise<SendCodeEmailResult> {
+  public async execute(input: SendCodeEmailInput): Promise<SendCodeEmailOutput> {
     const delivery: CodeEmailDelivery | null = await this.deliveries.find(input.deliveryId);
     if (delivery === null) {
       return { outcome: 'missing' };

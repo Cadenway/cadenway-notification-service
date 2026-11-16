@@ -1,10 +1,10 @@
 /**
- * Interface ExpireCodeEmailsResult
+ * Interface ExpireCodeEmailsOutput
  *
  * @description
  * What a sweep settled.
  */
-export interface ExpireCodeEmailsResult {
+export interface ExpireCodeEmailsOutput {
   // #region Properties
   /**
    * Property expired

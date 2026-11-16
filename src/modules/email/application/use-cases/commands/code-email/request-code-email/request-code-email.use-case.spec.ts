@@ -8,7 +8,7 @@ import {
 } from '../../../../ports/outbound/persistence/code-email/code-email-deliveries.port.fixture.js';
 import { RequestCodeEmail } from './request-code-email.use-case.js';
 import type { RequestCodeEmailInput } from './request-code-email.input.js';
-import type { RequestCodeEmailResult } from './request-code-email.output.js';
+import type { RequestCodeEmailOutput } from './request-code-email.output.js';
 
 /**
  * Function issuedCode
@@ -50,7 +50,7 @@ describe('RequestCodeEmail', () => {
   });
 
   it('records a valid code as queued, keeps its content apart and enqueues one job, in one transaction', async () => {
-    const result: RequestCodeEmailResult = await useCase.execute(issuedCode());
+    const result: RequestCodeEmailOutput = await useCase.execute(issuedCode());
 
     expect(result).toEqual({ outcome: 'queued', deliveryId: expect.any(String) as string });
     const deliveryId: string = result.outcome === 'queued' ? result.deliveryId : '';
@@ -69,7 +69,7 @@ describe('RequestCodeEmail', () => {
   });
 
   it('keeps the name of the recipient without the characters that would break the e-mail', async () => {
-    const result: RequestCodeEmailResult = await useCase.execute(
+    const result: RequestCodeEmailOutput = await useCase.execute(
       issuedCode({
         recipient: {
           email: 'camille.martin@ateliernord.fr',
@@ -95,7 +95,7 @@ describe('RequestCodeEmail', () => {
   it('records a code that already expired as skipped, with no content and no job', async () => {
     clock.instant = new Date('2026-11-09T13:17:00.000Z');
 
-    const result: RequestCodeEmailResult = await useCase.execute(issuedCode());
+    const result: RequestCodeEmailOutput = await useCase.execute(issuedCode());
 
     expect(result).toMatchObject({ outcome: 'skipped', reason: 'expired' });
     expect(queue.enqueued).toEqual([]);
@@ -106,7 +106,7 @@ describe('RequestCodeEmail', () => {
   });
 
   it('records an address-change code as skipped: its e-mail is not built yet', async () => {
-    const result: RequestCodeEmailResult = await useCase.execute(
+    const result: RequestCodeEmailOutput = await useCase.execute(
       issuedCode({ purpose: 'email-change' }),
     );
 
@@ -118,7 +118,7 @@ describe('RequestCodeEmail', () => {
   it('writes nothing for an event it already recorded', async () => {
     await useCase.execute(issuedCode());
 
-    const again: RequestCodeEmailResult = await useCase.execute(issuedCode());
+    const again: RequestCodeEmailOutput = await useCase.execute(issuedCode());
 
     expect(again).toEqual({ outcome: 'duplicate' });
     expect(deliveries.deliveries.size).toBe(1);

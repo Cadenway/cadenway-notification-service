@@ -1,6 +1,6 @@
 # Dependencies of cadenway-notification-service for working on it alone: its own PostgreSQL database,
 # NATS JetStream with the streams of cadenway-ops, and Mailpit for the e-mails. The service itself
-# runs on the host with `pnpm start:dev`; the integration specs of test/ start this file as
+# runs on the host with `pnpm start:dev`; the integration specs of tests/ start this file as
 # throwaway projects.
 #
 # The credentials below are local development values, matching .env.example. PostgreSQL has the two

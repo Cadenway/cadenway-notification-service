@@ -1,7 +1,7 @@
 import type { CodeEmailSkipReason } from '../../../../../domain/value-objects/code-email/code-email-skip-reason.value-object.js';
 
 /**
- * Type RequestCodeEmailResult
+ * Type RequestCodeEmailOutput
  *
  * @description
  * What became of the code: `queued`, its e-mail is recorded and its job enqueued; `skipped`, it is
@@ -10,7 +10,7 @@ import type { CodeEmailSkipReason } from '../../../../../domain/value-objects/co
  *
  * @type {{ readonly outcome: 'queued'; readonly deliveryId: string } | { readonly outcome: 'skipped'; readonly deliveryId: string; readonly reason: CodeEmailSkipReason } | { readonly outcome: 'duplicate' }}
  */
-export type RequestCodeEmailResult =
+export type RequestCodeEmailOutput =
   | { readonly outcome: 'queued'; readonly deliveryId: string }
   | {
       readonly outcome: 'skipped';

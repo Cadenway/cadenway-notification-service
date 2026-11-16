@@ -4,7 +4,7 @@ import { Logger } from '@nestjs/common';
 import type { OnApplicationBootstrap } from '@nestjs/common';
 import { z } from 'zod';
 import type { SendCodeEmail } from '../../../../application/use-cases/commands/code-email/send-code-email/send-code-email.use-case.js';
-import type { SendCodeEmailResult } from '../../../../application/use-cases/commands/code-email/send-code-email/send-code-email.output.js';
+import type { SendCodeEmailOutput } from '../../../../application/use-cases/commands/code-email/send-code-email/send-code-email.output.js';
 
 /**
  * Constant jobPayloadSchema
@@ -143,7 +143,7 @@ export class SendCodeEmailHandler implements OnApplicationBootstrap {
    */
   public async handle(job: Job): Promise<void> {
     const { deliveryId }: { readonly deliveryId: string } = jobPayloadSchema.parse(job.payload);
-    const result: SendCodeEmailResult = await this.sendCodeEmail.execute({
+    const result: SendCodeEmailOutput = await this.sendCodeEmail.execute({
       deliveryId,
       lastAttempt: job.attempt >= this.maxAttempts,
       signal: job.signal,

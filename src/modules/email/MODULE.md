@@ -71,7 +71,7 @@ is never replayed, it expires within minutes. An event whose `expiresAt` does no
 - The handler of the event runs in the system transaction of the deduplicator (the event has no
   organization); `RequestCodeEmail` joins it through `CodeEmailUnitOfWork`, so the processed id, the
   delivery, its content and its job commit together, or the event is redelivered.
-  `test/code-email.int-spec.ts` proves that a rollback after the enqueue leaves no delivery, content
+  `tests/code-email.int-spec.ts` proves that a rollback after the enqueue leaves no delivery, content
   or job.
 - The job `email.send-code` sends outside any transaction: it reads the delivery, renders the
   template, hands the e-mail to the SMTP server unless pg-boss gave up on the attempt (`signal`),

@@ -1,7 +1,7 @@
 import type { Clock } from '../../../../ports/outbound/time/code-email/clock.port.js';
 import type { CodeEmailDeliveries } from '../../../../ports/outbound/persistence/code-email/code-email-deliveries.port.js';
 import type { CodeEmailUnitOfWork } from '../../../../ports/outbound/persistence/code-email/code-email-unit-of-work.port.js';
-import type { ExpireCodeEmailsResult } from './expire-code-emails.output.js';
+import type { ExpireCodeEmailsOutput } from './expire-code-emails.output.js';
 
 /**
  * Class ExpireCodeEmails
@@ -79,9 +79,9 @@ export class ExpireCodeEmails {
    * @description
    * Settles the deliveries whose code expired.
    *
-   * @returns {Promise<ExpireCodeEmailsResult>} How many were settled, once committed.
+   * @returns {Promise<ExpireCodeEmailsOutput>} How many were settled, once committed.
    */
-  public async execute(): Promise<ExpireCodeEmailsResult> {
+  public async execute(): Promise<ExpireCodeEmailsOutput> {
     const now: Date = this.clock.now();
     const expired: number = await this.unitOfWork.run(() => this.deliveries.expireStale(now));
     return { expired };

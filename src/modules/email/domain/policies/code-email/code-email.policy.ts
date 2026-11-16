@@ -1,6 +1,6 @@
 import type { CodeEmailPurpose } from '../../value-objects/code-email/code-email-purpose.value-object.js';
 import type { CodeEmailTemplate } from '../../value-objects/code-email/code-email-template.value-object.js';
-import { CodeValidity } from '../../value-objects/code-email/code-validity.value-object.js';
+import type { CodeValidity } from '../../value-objects/code-email/code-validity.value-object.js';
 import type { CodeEmailDecision } from './code-email-decision.policy.js';
 
 /**
