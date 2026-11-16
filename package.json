@@ -1,6 +1,6 @@
 {
   "name": "cadenway-notification-service",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Cadenway notification service: inbox, reminders, preferences and emails.",
   "private": true,
   "license": "UNLICENSED",
