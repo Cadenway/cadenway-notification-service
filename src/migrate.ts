@@ -2,7 +2,8 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { loadConfig } from '@cadenway/nest-common';
-import { provisionJobs } from '@cadenway/nest-jobs';
+import { provisionJobs } from '@cadenway/nest-jobs/provisioning';
+import { finishOutboxLeaseMigration } from '@cadenway/nest-messaging/outbox/schema';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -55,8 +56,15 @@ if (!existsSync(`${migrationsFolder}/meta/_journal.json`)) {
     application_name: 'notification-service-migrator',
   });
   try {
-    await migrate(drizzle({ client: pool }), { migrationsFolder });
-    console.log('Migrations applied.');
+    const client: pg.PoolClient = await pool.connect();
+    try {
+      await migrate(drizzle({ client }), { migrationsFolder });
+      // The index is built concurrently, after Drizzle has committed.
+      await finishOutboxLeaseMigration(client);
+      console.log('Migrations applied.');
+    } finally {
+      client.release();
+    }
   } finally {
     await pool.end();
   }

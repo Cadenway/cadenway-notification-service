@@ -2,7 +2,7 @@ import {
   EXPIRE_CODE_EMAILS_QUEUE,
   EXPIRE_CODE_EMAILS_CRON,
 } from '../../../../../../config/job-queues.js';
-import type { JobScheduleOptions, JobsService } from '@cadenway/nest-jobs';
+import type { JobScheduleOptions, JobWorkerRegistry } from '@cadenway/nest-jobs/runtime';
 import { Logger } from '@nestjs/common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ExpireCodeEmails } from '../../../../application/use-cases/commands/code-email/expire-code-emails/expire-code-emails.use-case.js';
@@ -28,11 +28,7 @@ describe('ExpireCodeEmailsHandler', () => {
     schedules = [];
     workers = [];
     runs = 0;
-    const jobs: Pick<JobsService, 'schedule' | 'work'> = {
-      schedule: (queue: string, cron: string, options: JobScheduleOptions): Promise<void> => {
-        schedules.push({ queue, cron, timeZone: options.timeZone });
-        return Promise.resolve();
-      },
+    const jobs: JobWorkerRegistry = {
       work: (queue: string): Promise<void> => {
         workers.push(queue);
         return Promise.resolve();

@@ -4,7 +4,7 @@ import { parseEnv } from 'node:util';
 import { ConfigError, loadConfig } from '@cadenway/nest-common';
 import { describe, expect, it } from 'vitest';
 
-import { appConfigSchema, migrationConfigSchema } from './app-config.js';
+import { apiConfigSchema, appConfigSchema, migrationConfigSchema } from './app-config.js';
 
 describe('appConfigSchema', () => {
   const trustedIssuers: string =
@@ -57,6 +57,21 @@ describe('appConfigSchema', () => {
 
     expect(() => loadConfig(appConfigSchema, example)).not.toThrow();
     expect(() => loadConfig(migrationConfigSchema, example)).not.toThrow();
+  });
+
+  it('validates the API without loading invalid SMTP settings', () => {
+    const config = loadConfig(apiConfigSchema, {
+      ...complete,
+      SMTP_HOST: '',
+      SMTP_PORT: 'invalid',
+      SMTP_USER: 'unused',
+      MAIL_FROM: '',
+    });
+
+    expect(config).toMatchObject({ PORT: 3016, INTERNAL_TOKEN_AUDIENCE: 'notification-service' });
+    for (const key of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'MAIL_FROM', 'WEB_APP_URL']) {
+      expect(config).not.toHaveProperty(key);
+    }
   });
 
   it('refuses to start without the database, the broker, the audience or the trusted issuers', () => {

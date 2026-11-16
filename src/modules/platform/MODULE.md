@@ -6,7 +6,7 @@ Gives the tables of the service kit their place in this service's own migrations
 `src/modules/*/infrastructure/persistence/drizzle/schemas/*/*.schema.ts` only. A kit table enters the migration history through a schema re-export in this module. It owns:
 
 - `outbox_events`, `processed_events` and `event_versions`, defined by
-  `@cadenway/nest-messaging/outbox`;
+  `@cadenway/nest-messaging/outbox/schema`;
 - `idempotency_keys`, defined by `@cadenway/nest-common/database`.
 
 It holds no business rule, no use case, no route and no handler, and never will: product data and
@@ -21,12 +21,12 @@ transaction runners.
 
 ## Owned tables
 
-| Table              | Defined by                        | Organization scoping                                                         |
-| ------------------ | --------------------------------- | ---------------------------------------------------------------------------- |
-| `outbox_events`    | `@cadenway/nest-messaging/outbox` | `organization_id`, null for an event outside any organization; policy forced |
-| `processed_events` | `@cadenway/nest-messaging/outbox` | None: consumer and event id only, no organization data, no policy            |
-| `event_versions`   | `@cadenway/nest-messaging/outbox` | `organization_id`, part of the unique key; policy forced                     |
-| `idempotency_keys` | `@cadenway/nest-common/database`  | `organization_id`, part of the unique key; policy forced                     |
+| Table              | Defined by                               | Organization scoping                                                         |
+| ------------------ | ---------------------------------------- | ---------------------------------------------------------------------------- |
+| `outbox_events`    | `@cadenway/nest-messaging/outbox/schema` | `organization_id`, null for an event outside any organization; policy forced |
+| `processed_events` | `@cadenway/nest-messaging/outbox/schema` | None: consumer and event id only, no organization data, no policy            |
+| `event_versions`   | `@cadenway/nest-messaging/outbox/schema` | `organization_id`, part of the unique key; policy forced                     |
+| `idempotency_keys` | `@cadenway/nest-common/database`         | `organization_id`, part of the unique key; policy forced                     |
 
 Created by `migrations/0000_platform_tables.sql`, owned by the migrator role `notification_migrator`. The
 application role `notification_app` reads and writes their rows and holds no DDL right on them.

@@ -13,7 +13,8 @@
 # SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and MAIL_FROM are the outgoing e-mail, each from
 # the variable of the same name in cadenway-ops. WEB_APP_URL, the origin the links of the e-mails
 # point to, is built from PUBLIC_SCHEME and DOMAIN, as the ALLOWED_ORIGINS of the gateways, so no
-# environment sets it.
+# environment sets it. In split mode GitOps sets the NOTIFICATION_OWNER_* overrides to empty,
+# keeping SMTP values in the companion only. The single hyphen preserves these empty overrides.
 #
 # MIGRATION_DATABASE_URL is deliberately absent: the GitOps agent of cadenway-ops hands the
 # migrator's URL to the one-off migration container only (docs/database.md there), so the running
@@ -22,6 +23,7 @@ services:
   notification-service:
     image: ghcr.io/${GHCR_OWNER}/cadenway-notification-service:${NOTIFICATION_SERVICE_VERSION}
     restart: unless-stopped
+    stop_grace_period: 30s
     environment:
       PORT: '3016'
       NOTIFICATION_PROCESS_ROLE: ${NOTIFICATION_SERVICE_PROCESS_ROLE:-combined}
@@ -33,12 +35,12 @@ services:
       INTERNAL_TOKEN_TRUSTED_ISSUERS: >-
         {"api-gateway": [${API_GATEWAY_INTERNAL_TOKEN_PUBLIC_JWKS}],
         "automation-service": [${AUTOMATION_SERVICE_INTERNAL_TOKEN_PUBLIC_JWKS}]}
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASSWORD: ${SMTP_PASSWORD}
-      MAIL_FROM: ${MAIL_FROM}
-      WEB_APP_URL: ${PUBLIC_SCHEME:-https}://app.${DOMAIN}
+      SMTP_HOST: ${NOTIFICATION_OWNER_SMTP_HOST-${SMTP_HOST}}
+      SMTP_PORT: ${NOTIFICATION_OWNER_SMTP_PORT-${SMTP_PORT}}
+      SMTP_USER: ${NOTIFICATION_OWNER_SMTP_USER-${SMTP_USER}}
+      SMTP_PASSWORD: ${NOTIFICATION_OWNER_SMTP_PASSWORD-${SMTP_PASSWORD}}
+      MAIL_FROM: ${NOTIFICATION_OWNER_MAIL_FROM-${MAIL_FROM}}
+      WEB_APP_URL: ${NOTIFICATION_OWNER_WEB_APP_URL-${PUBLIC_SCHEME:-https}://app.${DOMAIN}}
     networks:
       - internal
     healthcheck:
@@ -55,6 +57,7 @@ services:
   notification-service-worker:
     image: ghcr.io/${GHCR_OWNER}/cadenway-notification-service:${NOTIFICATION_SERVICE_VERSION}
     restart: unless-stopped
+    stop_grace_period: 30s
     environment:
       PORT: '3016'
       NOTIFICATION_PROCESS_ROLE: worker

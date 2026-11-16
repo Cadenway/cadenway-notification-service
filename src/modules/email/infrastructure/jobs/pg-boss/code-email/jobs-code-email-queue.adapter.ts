@@ -1,6 +1,6 @@
 import { SystemTransactionRunner } from '@cadenway/nest-common/database';
 import type { TransactionScope } from '@cadenway/nest-common/database';
-import { JobsService } from '@cadenway/nest-jobs';
+import { JobProducer } from '@cadenway/nest-jobs/runtime';
 import { Injectable } from '@nestjs/common';
 import { SEND_CODE_EMAIL_QUEUE } from '../../../../../../config/job-queues.js';
 import type { CodeEmailQueue } from '../../../../application/ports/outbound/jobs/code-email/code-email-queue.port.js';
@@ -55,12 +55,12 @@ export class JobsCodeEmailQueue implements CodeEmailQueue {
    * Property jobs
    *
    * @description
-   * The jobs of `JobsModule`.
+   * The transactional job submission capability.
    *
-   * @type {JobsService}
+   * @type {JobProducer}
    * @readonly
    */
-  private readonly jobs: JobsService;
+  private readonly jobs: JobProducer;
   // #endregion
 
   // #region Constructor
@@ -68,13 +68,13 @@ export class JobsCodeEmailQueue implements CodeEmailQueue {
    * Constructor
    *
    * @description
-   * Receives the system transaction runner and the jobs service.
+   * Receives the system transaction runner and the job producer.
    *
    * @param {SystemTransactionRunner} system - The system transaction runner.
-   * @param {JobsService} jobs - The jobs service.
+   * @param {JobProducer} jobs - The job producer.
    * @constructor
    */
-  public constructor(system: SystemTransactionRunner, jobs: JobsService) {
+  public constructor(system: SystemTransactionRunner, jobs: JobProducer) {
     this.system = system;
     this.jobs = jobs;
   }

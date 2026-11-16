@@ -1,4 +1,4 @@
-import type { JobsService } from '@cadenway/nest-jobs';
+import type { JobWorkerRegistry } from '@cadenway/nest-jobs/runtime';
 import { Logger } from '@nestjs/common';
 import type { OnApplicationBootstrap } from '@nestjs/common';
 import type { ExpireCodeEmails } from '../../../../application/use-cases/commands/code-email/expire-code-emails/expire-code-emails.use-case.js';
@@ -28,12 +28,12 @@ export class ExpireCodeEmailsHandler implements OnApplicationBootstrap {
    * Property jobs
    *
    * @description
-   * The jobs of `JobsModule`.
+   * The worker registry of the kit.
    *
-   * @type {Pick<JobsService, 'work'>}
+   * @type {JobWorkerRegistry}
    * @readonly
    */
-  private readonly jobs: Pick<JobsService, 'work'>;
+  private readonly jobs: JobWorkerRegistry;
 
   /**
    * Property expireCodeEmails
@@ -63,15 +63,15 @@ export class ExpireCodeEmailsHandler implements OnApplicationBootstrap {
    * Constructor
    *
    * @description
-   * Receives the jobs service and the use case.
+   * Receives the worker registry and the use case.
    *
-   * @param {Pick<JobsService, 'work'>} jobs - The worker registry of the kit.
+   * @param {JobWorkerRegistry} jobs - The worker registry of the kit.
    * @param {ExpireCodeEmails} expireCodeEmails - The use case.
    * @param {string} queueName - The queue of expiry sweeps.
    * @constructor
    */
   public constructor(
-    jobs: Pick<JobsService, 'work'>,
+    jobs: JobWorkerRegistry,
     expireCodeEmails: ExpireCodeEmails,
     queueName: string,
   ) {

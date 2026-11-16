@@ -7,10 +7,10 @@ import type { MessagingConfig } from '@cadenway/nest-messaging';
 import { z } from 'zod';
 
 /**
- * Type AppConfig
+ * Type ApiConfig
  *
  * @description
- * Variables the running service reads, validated when the application is created: by `loadConfig`
+ * Variables the HTTP process reads, validated when the application is created: by `loadConfig`
  * in `main.ts` for the options of `createApplication`, and by `ConfigModule` for the providers that
  * inject `CONFIG`.
  *
@@ -25,18 +25,14 @@ import { z } from 'zod';
  * - `INTERNAL_TOKEN_AUDIENCE` and `INTERNAL_TOKEN_TRUSTED_ISSUERS`: the `aud` this service accepts
  *   and the public keys of the backends allowed to call it.
  *
- * - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` and `WEB_APP_URL`: the
- *   outgoing e-mail, see `EmailConfig`.
- *
  * `OTEL_EXPORTER_OTLP_ENDPOINT` is read by `telemetry.ts`, before the application exists.
  *
- * @type {BaseConfig & DatabaseConfig & MessagingConfig & InternalTokenVerifierConfig & EmailConfig}
+ * @type {BaseConfig & DatabaseConfig & MessagingConfig & InternalTokenVerifierConfig}
  */
-export type AppConfig = BaseConfig &
-  DatabaseConfig &
-  MessagingConfig &
-  InternalTokenVerifierConfig &
-  EmailConfig;
+export type ApiConfig = BaseConfig & DatabaseConfig & MessagingConfig & InternalTokenVerifierConfig;
+
+/** HTTP, database, messaging and e-mail settings for the combined process. */
+export type AppConfig = ApiConfig & EmailConfig;
 
 /** Readiness listener, database and SMTP settings needed by the background process. */
 export type WorkerConfig = BaseConfig & DatabaseConfig & EmailConfig;
@@ -168,6 +164,16 @@ export const workerConfigSchema: z.ZodType<WorkerConfig> = emailConfigSchema.saf
   ...databaseConfigShape,
 });
 
+const apiConfigShape = {
+  ...baseConfigShape,
+  ...databaseConfigShape,
+  ...messagingConfigShape,
+  ...internalTokenVerifierConfigShape,
+};
+
+/** Validates the API process environment, independently of SMTP. */
+export const apiConfigSchema: z.ZodType<ApiConfig> = z.object(apiConfigShape);
+
 /**
  * Constant appConfigSchema
  *
@@ -181,12 +187,7 @@ export const workerConfigSchema: z.ZodType<WorkerConfig> = emailConfigSchema.saf
  *
  * @type {z.ZodType<AppConfig>}
  */
-export const appConfigSchema: z.ZodType<AppConfig> = emailConfigSchema.safeExtend({
-  ...baseConfigShape,
-  ...databaseConfigShape,
-  ...messagingConfigShape,
-  ...internalTokenVerifierConfigShape,
-});
+export const appConfigSchema: z.ZodType<AppConfig> = emailConfigSchema.safeExtend(apiConfigShape);
 
 /**
  * Interface MigrationConfig

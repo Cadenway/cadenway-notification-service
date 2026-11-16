@@ -66,12 +66,14 @@ jobs:
           jq -e --arg service "$service" --arg image "ghcr.io/owner/$REPOSITORY:$VERSION" '
             def only($allowed): (keys - $allowed) == [];
             ($service + "-worker") as $worker
-            | (.services | keys) == [$service, $worker]
+            # Older releases have no companion and remain valid rollback targets.
+            | ((.services | keys) == [$service] or (.services | keys) == [$service, $worker])
             and (.services[$service] as $s
               | ($s | only(["command", "configs", "deploy", "entrypoint", "environment",
-                  "healthcheck", "image", "labels", "networks", "restart"]))
+                  "healthcheck", "image", "labels", "networks", "restart", "stop_grace_period"]))
               and $s.image == $image
               and ($s.entrypoint == null) and ($s.command == null)
+              and ($s.stop_grace_period == null or $s.stop_grace_period == "30s")
               and ($s.deploy // {} | only(["placement", "resources"]))
               and ($s.deploy.resources // {} | only(["limits"]))
               and ($s.networks // {} | only(["edge", "internal"]))
@@ -93,18 +95,27 @@ jobs:
                 | $s.labels // {} | to_entries | map(select(.key | endswith(".middlewares")))
                 | all(.value | split(",") | all(. as $m | $defined | index($m))))
               and ($s.labels["traefik.docker.network"] // "cadenway-edge-env") == "cadenway-edge-env")
-            and (.services[$worker] as $w
-              | ($w | only(["deploy", "environment", "healthcheck", "image", "networks", "restart"]))
+            and (.services[$worker] as $w | if $w == null then true else
+              ($w | only(["command", "deploy", "entrypoint", "environment", "healthcheck",
+                  "image", "networks", "restart", "stop_grace_period"]))
+              and $w.command == null and $w.entrypoint == null
               and $w.image == $image
-              and ($w.deploy | only(["replicas", "resources"]))
+              and $w.stop_grace_period == "30s"
+              and .services[$service].stop_grace_period == "30s"
+              and $w.restart == "unless-stopped"
+              and ($w.deploy | only(["placement", "replicas", "resources"]))
+              and ($w.deploy.placement // {}) == {}
               and $w.deploy.replicas == 0
               and ($w.deploy.resources // {} | only(["limits"]))
               and ($w.networks | keys) == ["internal"]
-              and ($w.healthcheck.test | length) > 0
+              and $w.healthcheck.test == ["CMD", "wget", "-qO-",
+                  "http://127.0.0.1:3016/health/ready"]
               and ($w.environment | only(["DATABASE_URL", "MAIL_FROM", "NOTIFICATION_PROCESS_ROLE",
                   "PORT", "SMTP_HOST", "SMTP_PASSWORD", "SMTP_PORT", "SMTP_USER", "WEB_APP_URL"]))
               and $w.environment.NOTIFICATION_PROCESS_ROLE == "worker"
-              and $w.environment.DATABASE_URL == .services[$service].environment.DATABASE_URL)
+              and $w.environment.PORT == "3016"
+              and $w.environment.DATABASE_URL == .services[$service].environment.DATABASE_URL
+              end)
             and (.networks // {} | only(["edge", "internal"]))
             and (.networks.edge == null or (.networks.edge.external == true
               and .networks.edge.name == "cadenway-edge-env"))

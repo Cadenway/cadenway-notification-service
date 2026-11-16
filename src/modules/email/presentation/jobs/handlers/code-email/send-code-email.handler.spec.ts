@@ -2,7 +2,12 @@ import {
   SEND_CODE_EMAIL_QUEUE,
   SEND_CODE_EMAIL_MAX_ATTEMPTS,
 } from '../../../../../../config/job-queues.js';
-import type { Job, JobHandler, JobsService, JobWorkOptions } from '@cadenway/nest-jobs';
+import type {
+  Job,
+  JobHandler,
+  JobWorkerRegistry,
+  JobWorkOptions,
+} from '@cadenway/nest-jobs/runtime';
 import { Logger } from '@nestjs/common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { SendCodeEmail } from '../../../../application/use-cases/commands/code-email/send-code-email/send-code-email.use-case.js';
@@ -48,12 +53,12 @@ describe('SendCodeEmailHandler', () => {
   beforeEach(async () => {
     registered = [];
     inputs = [];
-    const jobs: Pick<JobsService, 'work'> = {
+    const jobs: JobWorkerRegistry = {
       work: (queue: string, work: JobHandler, options?: JobWorkOptions): Promise<void> => {
         registered.push({ queue, handler: work, options });
         return Promise.resolve();
       },
-    } as Pick<JobsService, 'work'>;
+    } as JobWorkerRegistry;
     const useCase: Pick<SendCodeEmail, 'execute'> = {
       execute: (input: SendCodeEmailInput) => {
         inputs.push(input);
@@ -61,7 +66,7 @@ describe('SendCodeEmailHandler', () => {
       },
     };
     handler = new SendCodeEmailHandler(
-      jobs as JobsService,
+      jobs,
       useCase as SendCodeEmail,
       SEND_CODE_EMAIL_QUEUE,
       SEND_CODE_EMAIL_MAX_ATTEMPTS,

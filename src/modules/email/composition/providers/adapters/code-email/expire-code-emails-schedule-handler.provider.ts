@@ -1,4 +1,4 @@
-import { JobsService } from '@cadenway/nest-jobs';
+import { JobScheduler } from '@cadenway/nest-jobs/runtime';
 import type { FactoryProvider } from '@nestjs/common';
 
 import {
@@ -11,7 +11,7 @@ import { ExpireCodeEmailsScheduleHandler } from '../../../../presentation/jobs/h
 export const expireCodeEmailsScheduleHandlerProvider: FactoryProvider<ExpireCodeEmailsScheduleHandler> =
   {
     provide: ExpireCodeEmailsScheduleHandler,
-    inject: [JobsService],
-    useFactory: (jobs: JobsService): ExpireCodeEmailsScheduleHandler =>
+    inject: [JobScheduler],
+    useFactory: (jobs: JobScheduler): ExpireCodeEmailsScheduleHandler =>
       new ExpireCodeEmailsScheduleHandler(jobs, EXPIRE_CODE_EMAILS_QUEUE, EXPIRE_CODE_EMAILS_CRON),
   };

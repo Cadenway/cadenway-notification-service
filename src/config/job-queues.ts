@@ -1,4 +1,4 @@
-import type { JobQueueDeclaration } from '@cadenway/nest-jobs';
+import type { JobQueueDeclaration } from '@cadenway/nest-jobs/runtime';
 
 /**
  * Constant SEND_CODE_EMAIL_QUEUE
@@ -52,7 +52,7 @@ export const EXPIRE_CODE_EMAILS_CRON: string = '*/5 * * * *';
  *
  * @description
  * Every queue of this service, given as is to `provisionJobs` (`src/migrate.ts`, as the migrator
- * role) and to `JobsModule` (`src/app.module.ts`, as the application role): a queue missing from
+ * role) and to `JobsRuntimeModule` (`src/app.module.ts`, as the application role): a queue missing from
  * the database stops the start-up, and a changed declaration reaches the database at the next
  * migration run. Every payload holds ids only, never a code nor an address.
  *

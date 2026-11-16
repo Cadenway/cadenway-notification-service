@@ -6,10 +6,12 @@ import { eventSchemas } from '@cadenway/contracts/events/identity-service';
 import type { OneTimeCodeIssuedV1 } from '@cadenway/contracts/events/identity-service';
 import { createApplication, loadConfig, runWithOrganizationContext } from '@cadenway/nest-common';
 import { SystemTransactionRunner, TenantTransactionRunner } from '@cadenway/nest-common/database';
+import { JobProducer, JobScheduler, JobWorkerRegistry } from '@cadenway/nest-jobs/runtime';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppModule, NotificationApiModule, WorkerModule } from '../src/app.module.js';
-import { appConfigSchema, workerConfigSchema } from '../src/config/app-config.js';
+import { apiConfigSchema, appConfigSchema, workerConfigSchema } from '../src/config/app-config.js';
+import { EXPIRE_CODE_EMAILS_QUEUE, SEND_CODE_EMAIL_QUEUE } from '../src/config/job-queues.js';
 import { ExpireCodeEmails } from '../src/modules/email/application/use-cases/commands/code-email/expire-code-emails/expire-code-emails.use-case.js';
 import { CODE_EMAIL_DELIVERIES } from '../src/modules/email/composition/tokens/code-email/code-email-deliveries.token.js';
 import type { CodeEmailDeliveries } from '../src/modules/email/application/ports/outbound/persistence/code-email/code-email-deliveries.port.js';
@@ -710,7 +712,7 @@ describe('code e-mails', () => {
   it('queues work with the API alone and delivers it after the dedicated worker becomes ready', async () => {
     await service().close();
     app = undefined;
-    const config = loadConfig(appConfigSchema);
+    const config = loadConfig(apiConfigSchema, { ...process.env, SMTP_PORT: 'invalid' });
     app = await createApplication(NotificationApiModule, {
       service: 'notification-service',
       config,
@@ -723,6 +725,9 @@ describe('code e-mails', () => {
       },
     });
     await app.init();
+    await expect(
+      app.get(JobWorkerRegistry).work(SEND_CODE_EMAIL_QUEUE, () => Promise.resolve()),
+    ).rejects.toThrow('The worker jobs capability is not enabled');
     const event = codeIssued('sign-in', codes.signIn);
     publishAsIdentity(event, event.id);
     await vi.waitFor(
@@ -742,6 +747,17 @@ describe('code e-mails', () => {
       await worker.listen(0, '127.0.0.1');
       const ready = await fetch(`${await worker.getUrl()}/health/ready`);
       expect(ready.ok).toBe(true);
+      await expect(
+        worker.get(JobScheduler).schedule(EXPIRE_CODE_EMAILS_QUEUE, '*/5 * * * *', {
+          timeZone: 'UTC',
+        }),
+      ).rejects.toThrow('The scheduler jobs capability is not enabled');
+      const producer = worker.get(JobProducer);
+      await expect(
+        worker
+          .get(SystemTransactionRunner)
+          .run((tx) => producer.enqueue(tx, SEND_CODE_EMAIL_QUEUE, {})),
+      ).rejects.toThrow('The producer jobs capability is not enabled');
       await waitUntilSettled(event.id);
       expect(await deliveriesOf(event.id)).toMatchObject([{ status: 'sent', pending: false }]);
     } finally {

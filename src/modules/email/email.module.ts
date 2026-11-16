@@ -26,7 +26,7 @@ import { expireCodeEmailsScheduleHandlerProvider } from './composition/providers
  * code expired before they could leave. See its `MODULE.md`.
  *
  * It relies on the global modules of `AppModule`: `CONFIG`, `DatabaseModule` (system transaction
- * runner), `MessagingModule` and `OutboxModule` (consumers and deduplicator) and `JobsModule`. The
+ * runner), `MessagingModule` and `OutboxModule` (consumers and deduplicator) and `JobsRuntimeModule`. The
  * templates are loaded when the module is built: missing ones stop the start-up.
  */
 @Module({})

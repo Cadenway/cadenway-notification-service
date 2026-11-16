@@ -2,7 +2,8 @@ import { RESTRICTED_EVENT_NAMES } from '@cadenway/contracts/events/identity-serv
 import { CONFIG, HealthModule, postgresIndicator } from '@cadenway/nest-common';
 import type { PostgresProbe } from '@cadenway/nest-common';
 import { DATABASE_POOL, DatabaseModule } from '@cadenway/nest-common/database';
-import { JobsModule } from '@cadenway/nest-jobs';
+import { JobsRuntimeModule } from '@cadenway/nest-jobs/runtime';
+import type { JobsCapability } from '@cadenway/nest-jobs/runtime';
 import {
   MessagingConnection,
   MessagingModule,
@@ -10,18 +11,40 @@ import {
 } from '@cadenway/nest-messaging';
 import { OutboxModule } from '@cadenway/nest-messaging/outbox';
 import { Module } from '@nestjs/common';
-import type { ModuleMetadata } from '@nestjs/common';
+import type { DynamicModule, ModuleMetadata } from '@nestjs/common';
 
-import type { AppConfig, WorkerConfig } from './config/app-config.js';
+import type { ApiConfig, WorkerConfig } from './config/app-config.js';
 import { jobQueues } from './config/job-queues.js';
+import type { NotificationProcessRole } from './config/notification-process-role.js';
 import { EmailModule } from './modules/email/email.module.js';
 import { PlatformModule } from './modules/platform/platform.module.js';
 
+const jobCapabilities: Readonly<Record<NotificationProcessRole, readonly JobsCapability[]>> = {
+  combined: ['producer', 'scheduler', 'worker'],
+  api: ['producer', 'scheduler'],
+  worker: ['worker'],
+};
+
+/** Each process reserves only its own pg-boss connections, separately from DatabaseModule. */
+function jobsRuntime(role: NotificationProcessRole): DynamicModule {
+  return JobsRuntimeModule.forRootAsync({
+    inject: [CONFIG],
+    useFactory: (config: Pick<ApiConfig, 'DATABASE_URL'>) => ({
+      connection: { connectionString: config.DATABASE_URL },
+      capabilities: jobCapabilities[role],
+      queues: jobQueues,
+      poolSize: role === 'api' ? 1 : 2,
+      shutdownTimeoutMs: 20_000,
+    }),
+  });
+}
+
+/** Shared HTTP and messaging composition, with capabilities selected by the process role. */
 function httpImports(role: 'combined' | 'api'): NonNullable<ModuleMetadata['imports']> {
   return [
     DatabaseModule.forRootAsync({
       inject: [CONFIG],
-      useFactory: (config: AppConfig) => ({
+      useFactory: (config: ApiConfig) => ({
         connectionString: config.DATABASE_URL,
         applicationName: 'notification-service',
         idempotency: true,
@@ -29,7 +52,7 @@ function httpImports(role: 'combined' | 'api'): NonNullable<ModuleMetadata['impo
     }),
     MessagingModule.forRootAsync({
       inject: [CONFIG],
-      useFactory: (config: AppConfig) => ({
+      useFactory: (config: ApiConfig) => ({
         service: 'notification-service',
         servers: config.NATS_URL,
         user: config.NATS_USER,
@@ -41,13 +64,7 @@ function httpImports(role: 'combined' | 'api'): NonNullable<ModuleMetadata['impo
       }),
     }),
     OutboxModule.forRoot(),
-    JobsModule.forRootAsync({
-      inject: [CONFIG],
-      useFactory: (config: AppConfig) => ({
-        connection: { connectionString: config.DATABASE_URL },
-        queues: jobQueues,
-      }),
-    }),
+    jobsRuntime(role),
     HealthModule.forRootAsync({
       inject: [DATABASE_POOL, MessagingConnection],
       useFactory: (pool: PostgresProbe, connection: MessagingConnection) => ({
@@ -100,13 +117,10 @@ function httpImports(role: 'combined' | 'api'): NonNullable<ModuleMetadata['impo
  *   Callers reach it through the Docker DNS of the `internal` network, which keeps returning a
  *   stopping container until it exits, whatever its health (checked on Docker 28.2), and the GitOps
  *   agent only waits for the new container to be healthy before it stops the old one. A delay would
- *   lengthen every stop, under the 10 second default grace period of Docker, without moving any
- *   request away; set it above the probe interval of a proxy if one ever routes on readiness.
- * - `JobsModule`: the durable jobs of `@cadenway/nest-jobs`, on pg-boss in the `pgboss` schema of
- *   this service's own database, as the application role of `DATABASE_URL`, with a pool of two
- *   connections of its own. `src/migrate.ts` provisions the schema and the queues of
- *   `src/config/job-queues.ts` as the migrator role; the start-up fails while they are missing.
- *   Running jobs get 30 seconds to finish at shutdown.
+ *   lengthen every stop without moving any request away.
+ * - `JobsRuntimeModule`: the durable jobs of `@cadenway/nest-jobs` in this service's database.
+ *   `src/migrate.ts` provisions the schema and queues as the migrator role.
+ *   The combined process runs all capabilities. Jobs get 20 seconds to finish at shutdown.
  * - `PlatformModule`: the owner of the kit tables in the migrations of the service.
  * - `EmailModule`: the e-mails that carry a single-use code (`src/modules/email/MODULE.md`).
  *
@@ -130,14 +144,7 @@ export class NotificationApiModule {}
         poolSize: 2,
       }),
     }),
-    JobsModule.forRootAsync({
-      inject: [CONFIG],
-      useFactory: (config: WorkerConfig) => ({
-        connection: { connectionString: config.DATABASE_URL },
-        queues: jobQueues,
-        shutdownTimeoutMs: 20_000,
-      }),
-    }),
+    jobsRuntime('worker'),
     HealthModule.forRootAsync({
       inject: [DATABASE_POOL],
       useFactory: (pool: PostgresProbe) => ({ indicators: [postgresIndicator(pool)] }),

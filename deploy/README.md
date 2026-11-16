@@ -4,7 +4,12 @@ The owner and the companion use the same release image. The owner remains the on
 entry and provides the internal HTTP API, NATS subscriptions, job submission and cron registration.
 The companion consumes job queues and sends e-mails. Its HTTP listener binds to loopback for
 the container health check. It receives the existing application-role database URL and SMTP
-settings.
+settings. In split mode GitOps passes empty `NOTIFICATION_OWNER_*` overrides to Compose, so
+the API process gets no SMTP values. The owner and companion each have a 30-second Compose stop
+grace for the 20-second Jobs drain.
+
+The Jobs runtime may open one PostgreSQL connection for the API, two for the combined process,
+and two per worker. A worker can also open two connections in the application pool.
 
 | Desired state            | `NOTIFICATION_SERVICE_PROCESS_ROLE` | `NOTIFICATION_SERVICE_WORKER_REPLICAS` |
 | ------------------------ | ----------------------------------- | -------------------------------------- |
@@ -13,7 +18,8 @@ settings.
 | Run and scale the worker | `api`                               | `1` or `2`                             |
 
 Enable the pilot after deploying the role-aware Service Kit and a GitOps agent that reconciles
-the companion. Apply the preparation state first, then confirm the old combined containers
+the companion and applies the `NOTIFICATION_OWNER_*` overrides. Apply the preparation state
+first, then confirm the old combined containers
 have stopped and the API is healthy. Apply one worker, verify job completion, then scale from
 one to two and back to one. Check the earliest queued job, per-process connections and HTTP
 readiness at each step.

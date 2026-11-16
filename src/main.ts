@@ -2,8 +2,8 @@ import { createApplication, loadConfig, runApplication } from '@cadenway/nest-co
 import type { NestExpressApplication } from '@nestjs/platform-express';
 
 import { AppModule, NotificationApiModule, WorkerModule } from './app.module.js';
-import { appConfigSchema, workerConfigSchema } from './config/app-config.js';
-import type { AppConfig, WorkerConfig } from './config/app-config.js';
+import { apiConfigSchema, appConfigSchema, workerConfigSchema } from './config/app-config.js';
+import type { ApiConfig, WorkerConfig } from './config/app-config.js';
 import { notificationProcessRoleSchema } from './config/notification-process-role.js';
 
 // Started after the instrumentation hooks and `telemetry.js`, with the heap capped for the 256M
@@ -30,7 +30,9 @@ await runApplication({ service: 'notification-service' }, async (): Promise<void
     await app.listen(config.PORT, '127.0.0.1');
     return;
   }
-  const config: Readonly<AppConfig> = loadConfig(appConfigSchema);
+  const config: Readonly<ApiConfig> = loadConfig(
+    role === 'api' ? apiConfigSchema : appConfigSchema,
+  );
   const app: NestExpressApplication = await createApplication(
     role === 'api' ? NotificationApiModule : AppModule,
     {

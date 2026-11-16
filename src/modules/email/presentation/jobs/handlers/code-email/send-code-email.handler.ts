@@ -1,5 +1,5 @@
-import type { JobsService } from '@cadenway/nest-jobs';
-import type { Job } from '@cadenway/nest-jobs';
+import type { JobWorkerRegistry } from '@cadenway/nest-jobs/runtime';
+import type { Job } from '@cadenway/nest-jobs/runtime';
 import { Logger } from '@nestjs/common';
 import type { OnApplicationBootstrap } from '@nestjs/common';
 import { z } from 'zod';
@@ -49,12 +49,12 @@ export class SendCodeEmailHandler implements OnApplicationBootstrap {
    * Property jobs
    *
    * @description
-   * The jobs of `JobsModule`.
+   * The worker registry of the kit.
    *
-   * @type {JobsService}
+   * @type {JobWorkerRegistry}
    * @readonly
    */
-  private readonly jobs: JobsService;
+  private readonly jobs: JobWorkerRegistry;
 
   /**
    * Property sendCodeEmail
@@ -95,16 +95,16 @@ export class SendCodeEmailHandler implements OnApplicationBootstrap {
    * Constructor
    *
    * @description
-   * Receives the jobs service and the use case.
+   * Receives the worker registry and the use case.
    *
-   * @param {JobsService} jobs - The jobs service of the kit.
+   * @param {JobWorkerRegistry} jobs - The worker registry of the kit.
    * @param {SendCodeEmail} sendCodeEmail - The use case.
    * @param {string} queueName - The queue of code emails.
    * @param {number} maxAttempts - The maximum number of attempts declared for the queue.
    * @constructor
    */
   public constructor(
-    jobs: JobsService,
+    jobs: JobWorkerRegistry,
     sendCodeEmail: SendCodeEmail,
     queueName: string,
     maxAttempts: number,
