@@ -157,7 +157,7 @@ in its changeset: upgrade the package, generate, review the new migration.
 
 ### Integration tests
 
-`pnpm test:integration` needs Docker. `test/service-wiring.int-spec.ts` starts PostgreSQL, NATS and
+`pnpm test:integration` needs Docker. `tests/service-wiring.int-spec.ts` starts PostgreSQL, NATS and
 `nats-streams` from `compose.dev.yaml` as a throwaway Compose project on free ports (the data of the
 dev stack is never touched), applies the migrations with `src/migrate.ts` as the migrator role, and
 assembles the application as `main.ts` does, as `notification_app` and the NATS user `notification`.
@@ -169,7 +169,7 @@ cadenway-ops, that the dead-letter worker copies a message another consumer gave
 PostgreSQL is down and from the start of a shutdown, back to 200 once NATS returns) and the internal
 token. It moves to the fixtures of `@cadenway/nest-testing` once that package exports them.
 
-`test/code-email.int-spec.ts` starts its own throwaway project, with Mailpit. It publishes
+`tests/code-email.int-spec.ts` starts its own throwaway project, with Mailpit. It publishes
 `one-time-code.issued.v1` as the `identity` user of the broker and checks that the e-mail with the
 code reaches the HTTP API of Mailpit, with its headers; that a redelivered event sends one e-mail,
 and that an expired code and an address-change code send none; that no user but `notification` can

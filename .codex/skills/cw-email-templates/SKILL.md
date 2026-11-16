@@ -11,7 +11,7 @@ l’adresse" (`email-verification`) and "Code de connexion" (`sign-in`).
 
 ## Build
 
-- A template is a folder of `src/modules/email/infrastructure/templates/`: `html.mjml` (MJML with
+- A template is a folder of `src/modules/email/infrastructure/adapters/templates/`: `html.mjml` (MJML with
   Handlebars placeholders), `text.hbs` (the text part) and `subject.hbs`. Shared pieces sit in
   `partials/`: a head partial is a whole `<mjml><mj-head>` document included inside the `mj-head`
   of the template (MJML keeps the first `mj-head` only); a body partial is bare MJML.
@@ -69,5 +69,5 @@ whose `chokidar@4.0.3` is refused by the `trustPolicy` of `pnpm-workspace.yaml`,
 
 - A template test renders with the mockup fixtures (Atelier Nord, Camille Martin, CAD-482) and
   checks the subject, the text part and the presence of the unsubscribe headers.
-- `test/code-email.int-spec.ts` sends through a disposable Mailpit (`compose.dev.yaml`) and reads
+- `tests/code-email.int-spec.ts` sends through a disposable Mailpit (`compose.dev.yaml`) and reads
   the email back from its HTTP API.
