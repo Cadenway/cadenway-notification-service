@@ -1,9 +1,10 @@
 import { createApplication, loadConfig, runApplication } from '@cadenway/nest-common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 
-import { AppModule } from './app.module.js';
-import { appConfigSchema } from './config/app-config.js';
-import type { AppConfig } from './config/app-config.js';
+import { AppModule, NotificationApiModule, WorkerModule } from './app.module.js';
+import { appConfigSchema, workerConfigSchema } from './config/app-config.js';
+import type { AppConfig, WorkerConfig } from './config/app-config.js';
+import { notificationProcessRoleSchema } from './config/notification-process-role.js';
 
 // Started after the instrumentation hooks and `telemetry.js`, with the heap capped for the 256M
 // container: `node --max-old-space-size=160 --import @cadenway/nest-common/register
@@ -16,17 +17,33 @@ import type { AppConfig } from './config/app-config.js';
 // comes from that token only. The environment is validated once, here: `provideConfig` hands the
 // result to AppModule as CONFIG.
 await runApplication({ service: 'notification-service' }, async (): Promise<void> => {
+  const { NOTIFICATION_PROCESS_ROLE: role } = loadConfig(notificationProcessRoleSchema);
+  if (role === 'worker') {
+    const config: Readonly<WorkerConfig> = loadConfig(workerConfigSchema);
+    const app: NestExpressApplication = await createApplication(WorkerModule, {
+      service: 'notification-service-worker',
+      config,
+      provideConfig: true,
+      // WorkerModule exposes only health probes, on the container loopback below.
+      internalTokenVerification: 'off',
+    });
+    await app.listen(config.PORT, '127.0.0.1');
+    return;
+  }
   const config: Readonly<AppConfig> = loadConfig(appConfigSchema);
-  const app: NestExpressApplication = await createApplication(AppModule, {
-    service: 'notification-service',
-    config,
-    provideConfig: true,
-    internalToken: {
-      verifier: {
-        audience: config.INTERNAL_TOKEN_AUDIENCE,
-        trustedIssuers: config.INTERNAL_TOKEN_TRUSTED_ISSUERS,
+  const app: NestExpressApplication = await createApplication(
+    role === 'api' ? NotificationApiModule : AppModule,
+    {
+      service: 'notification-service',
+      config,
+      provideConfig: true,
+      internalToken: {
+        verifier: {
+          audience: config.INTERNAL_TOKEN_AUDIENCE,
+          trustedIssuers: config.INTERNAL_TOKEN_TRUSTED_ISSUERS,
+        },
       },
     },
-  });
+  );
   await app.listen(config.PORT);
 });

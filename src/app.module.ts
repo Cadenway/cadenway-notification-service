@@ -10,11 +10,55 @@ import {
 } from '@cadenway/nest-messaging';
 import { OutboxModule } from '@cadenway/nest-messaging/outbox';
 import { Module } from '@nestjs/common';
+import type { ModuleMetadata } from '@nestjs/common';
 
-import type { AppConfig } from './config/app-config.js';
+import type { AppConfig, WorkerConfig } from './config/app-config.js';
 import { jobQueues } from './config/job-queues.js';
 import { EmailModule } from './modules/email/email.module.js';
 import { PlatformModule } from './modules/platform/platform.module.js';
+
+function httpImports(role: 'combined' | 'api'): NonNullable<ModuleMetadata['imports']> {
+  return [
+    DatabaseModule.forRootAsync({
+      inject: [CONFIG],
+      useFactory: (config: AppConfig) => ({
+        connectionString: config.DATABASE_URL,
+        applicationName: 'notification-service',
+        idempotency: true,
+      }),
+    }),
+    MessagingModule.forRootAsync({
+      inject: [CONFIG],
+      useFactory: (config: AppConfig) => ({
+        service: 'notification-service',
+        servers: config.NATS_URL,
+        user: config.NATS_USER,
+        password: config.NATS_PASSWORD,
+        manageStreams: false,
+        deadLetterWorker: true,
+        restrictedDeadLetterPayload: 'drop',
+        restrictedEvents: RESTRICTED_EVENT_NAMES,
+      }),
+    }),
+    OutboxModule.forRoot(),
+    JobsModule.forRootAsync({
+      inject: [CONFIG],
+      useFactory: (config: AppConfig) => ({
+        connection: { connectionString: config.DATABASE_URL },
+        queues: jobQueues,
+      }),
+    }),
+    HealthModule.forRootAsync({
+      inject: [DATABASE_POOL, MessagingConnection],
+      useFactory: (pool: PostgresProbe, connection: MessagingConnection) => ({
+        indicators: [postgresIndicator(pool), messagingHealthIndicator(connection)],
+        shutdownDelayMs: 0,
+      }),
+    }),
+    PlatformModule,
+    EmailModule.forRole(role),
+  ];
+}
 
 /**
  * Class AppModule
@@ -68,46 +112,37 @@ import { PlatformModule } from './modules/platform/platform.module.js';
  *
  * Business modules under `src/modules/` are registered here as they are created.
  */
+@Module({ imports: httpImports('combined') })
+export class AppModule {}
+
+/** HTTP, restricted event consumption, job production and scheduling for the split deployment. */
+@Module({ imports: httpImports('api') })
+export class NotificationApiModule {}
+
+/** SMTP job execution and a private readiness listener for the Notification worker. */
 @Module({
   imports: [
     DatabaseModule.forRootAsync({
       inject: [CONFIG],
-      useFactory: (config: AppConfig) => ({
+      useFactory: (config: WorkerConfig) => ({
         connectionString: config.DATABASE_URL,
-        applicationName: 'notification-service',
-        idempotency: true,
+        applicationName: 'notification-service-worker',
+        poolSize: 2,
       }),
     }),
-    MessagingModule.forRootAsync({
-      inject: [CONFIG],
-      useFactory: (config: AppConfig) => ({
-        service: 'notification-service',
-        servers: config.NATS_URL,
-        user: config.NATS_USER,
-        password: config.NATS_PASSWORD,
-        manageStreams: false,
-        deadLetterWorker: true,
-        restrictedDeadLetterPayload: 'drop',
-        restrictedEvents: RESTRICTED_EVENT_NAMES,
-      }),
-    }),
-    OutboxModule.forRoot(),
     JobsModule.forRootAsync({
       inject: [CONFIG],
-      useFactory: (config: AppConfig) => ({
+      useFactory: (config: WorkerConfig) => ({
         connection: { connectionString: config.DATABASE_URL },
         queues: jobQueues,
+        shutdownTimeoutMs: 20_000,
       }),
     }),
     HealthModule.forRootAsync({
-      inject: [DATABASE_POOL, MessagingConnection],
-      useFactory: (pool: PostgresProbe, connection: MessagingConnection) => ({
-        indicators: [postgresIndicator(pool), messagingHealthIndicator(connection)],
-        shutdownDelayMs: 0,
-      }),
+      inject: [DATABASE_POOL],
+      useFactory: (pool: PostgresProbe) => ({ indicators: [postgresIndicator(pool)] }),
     }),
-    PlatformModule,
-    EmailModule,
+    EmailModule.forRole('worker'),
   ],
 })
-export class AppModule {}
+export class WorkerModule {}

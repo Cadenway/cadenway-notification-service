@@ -8,10 +8,8 @@ import type { ExpireCodeEmailsOutput } from '../../../../application/use-cases/c
  * Class ExpireCodeEmailsHandler
  *
  * @description
- * Schedules and works the sweep of the code e-mails (`email.expire-codes`, every 5 minutes in
- * UTC). Every replica registers the same schedule at start-up, which replaces it: pg-boss creates
- * one job per occurrence whatever the number of replicas. Each run hands over to
- * `ExpireCodeEmails` and logs how many deliveries it settled, when there were some.
+ * Works the sweep of the code e-mails. Each run hands over to `ExpireCodeEmails` and logs how
+ * many deliveries it settled, when there were some.
  */
 export class ExpireCodeEmailsHandler implements OnApplicationBootstrap {
   // #region Properties
@@ -32,10 +30,10 @@ export class ExpireCodeEmailsHandler implements OnApplicationBootstrap {
    * @description
    * The jobs of `JobsModule`.
    *
-   * @type {JobsService}
+   * @type {Pick<JobsService, 'work'>}
    * @readonly
    */
-  private readonly jobs: JobsService;
+  private readonly jobs: Pick<JobsService, 'work'>;
 
   /**
    * Property expireCodeEmails
@@ -58,17 +56,6 @@ export class ExpireCodeEmailsHandler implements OnApplicationBootstrap {
    * @readonly
    */
   private readonly queueName: string;
-
-  /**
-   * Property cron
-   *
-   * @description
-   * The UTC cron expression for the sweep.
-   *
-   * @type {string}
-   * @readonly
-   */
-  private readonly cron: string;
   // #endregion
 
   // #region Constructor
@@ -78,22 +65,19 @@ export class ExpireCodeEmailsHandler implements OnApplicationBootstrap {
    * @description
    * Receives the jobs service and the use case.
    *
-   * @param {JobsService} jobs - The jobs service of the kit.
+   * @param {Pick<JobsService, 'work'>} jobs - The worker registry of the kit.
    * @param {ExpireCodeEmails} expireCodeEmails - The use case.
    * @param {string} queueName - The queue of expiry sweeps.
-   * @param {string} cron - The UTC cron expression for the sweep.
    * @constructor
    */
   public constructor(
-    jobs: JobsService,
+    jobs: Pick<JobsService, 'work'>,
     expireCodeEmails: ExpireCodeEmails,
     queueName: string,
-    cron: string,
   ) {
     this.jobs = jobs;
     this.expireCodeEmails = expireCodeEmails;
     this.queueName = queueName;
-    this.cron = cron;
   }
   // #endregion
 
@@ -102,14 +86,11 @@ export class ExpireCodeEmailsHandler implements OnApplicationBootstrap {
    * Method onApplicationBootstrap
    *
    * @description
-   * Registers the schedule and the worker of the sweep.
+   * Registers the worker of the sweep.
    *
-   * @returns {Promise<void>} Settles once both are registered.
+   * @returns {Promise<void>} Settles once the worker is registered.
    */
   public async onApplicationBootstrap(): Promise<void> {
-    await this.jobs.schedule(this.queueName, this.cron, {
-      timeZone: 'UTC',
-    });
     await this.jobs.work(this.queueName, (): Promise<void> => this.handle());
   }
 

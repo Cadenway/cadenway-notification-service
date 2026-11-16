@@ -38,6 +38,9 @@ export type AppConfig = BaseConfig &
   InternalTokenVerifierConfig &
   EmailConfig;
 
+/** Readiness listener, database and SMTP settings needed by the background process. */
+export type WorkerConfig = BaseConfig & DatabaseConfig & EmailConfig;
+
 /**
  * Interface EmailConfig
  *
@@ -137,25 +140,8 @@ export interface EmailConfig {
  */
 const LOCAL_WEB_APP_URL: string = 'http://app.cadenway.localhost';
 
-/**
- * Constant appConfigSchema
- *
- * @description
- * Zod schema of `AppConfig`, composed from the shapes of `@cadenway/nest-common` and
- * `@cadenway/nest-messaging` so the names, defaults and validation stay those of the kit, and from
- * the variables of the outgoing e-mail. A missing or invalid variable makes `loadConfig` throw a
- * `ConfigError` that names it without printing its value. An empty variable counts as unset, so
- * the empty `SMTP_USER` and `SMTP_PASSWORD` of `.env.example` mean "no account"; the two are set
- * together or not at all.
- *
- * @type {z.ZodType<AppConfig>}
- */
-export const appConfigSchema: z.ZodType<AppConfig> = z
+const emailConfigSchema = z
   .object({
-    ...baseConfigShape,
-    ...databaseConfigShape,
-    ...messagingConfigShape,
-    ...internalTokenVerifierConfigShape,
     SMTP_HOST: z.string().min(1),
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535),
     SMTP_USER: z.string().min(1).optional(),
@@ -175,6 +161,32 @@ export const appConfigSchema: z.ZodType<AppConfig> = z
       });
     }
   });
+
+/** Validates the worker's environment, whose readiness listener binds only to loopback. */
+export const workerConfigSchema: z.ZodType<WorkerConfig> = emailConfigSchema.safeExtend({
+  ...baseConfigShape,
+  ...databaseConfigShape,
+});
+
+/**
+ * Constant appConfigSchema
+ *
+ * @description
+ * Zod schema of `AppConfig`, composed from the shapes of `@cadenway/nest-common` and
+ * `@cadenway/nest-messaging` so the names, defaults and validation stay those of the kit, and from
+ * the variables of the outgoing e-mail. A missing or invalid variable makes `loadConfig` throw a
+ * `ConfigError` that names it without printing its value. An empty variable counts as unset, so
+ * the empty `SMTP_USER` and `SMTP_PASSWORD` of `.env.example` mean "no account"; the two are set
+ * together or not at all.
+ *
+ * @type {z.ZodType<AppConfig>}
+ */
+export const appConfigSchema: z.ZodType<AppConfig> = emailConfigSchema.safeExtend({
+  ...baseConfigShape,
+  ...databaseConfigShape,
+  ...messagingConfigShape,
+  ...internalTokenVerifierConfigShape,
+});
 
 /**
  * Interface MigrationConfig

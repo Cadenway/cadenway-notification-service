@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import type { DynamicModule, Provider } from '@nestjs/common';
+import type { NotificationProcessRole } from '../../config/notification-process-role.js';
 import { OneTimeCodeIssuedHandler } from './presentation/messaging/handlers/identity/one-time-code-issued.handler.js';
 import { clockProvider } from './composition/providers/adapters/code-email/clock.provider.js';
 import { codeEmailUnitOfWorkProvider } from './composition/providers/adapters/code-email/code-email-unit-of-work.provider.js';
@@ -11,6 +13,7 @@ import { sendCodeEmailProvider } from './composition/providers/use-cases/code-em
 import { expireCodeEmailsProvider } from './composition/providers/use-cases/code-email/expire-code-emails.provider.js';
 import { sendCodeEmailHandlerProvider } from './composition/providers/adapters/code-email/send-code-email-handler.provider.js';
 import { expireCodeEmailsHandlerProvider } from './composition/providers/adapters/code-email/expire-code-emails-handler.provider.js';
+import { expireCodeEmailsScheduleHandlerProvider } from './composition/providers/adapters/code-email/expire-code-emails-schedule-handler.provider.js';
 
 /**
  * Class EmailModule
@@ -26,20 +29,40 @@ import { expireCodeEmailsHandlerProvider } from './composition/providers/adapter
  * runner), `MessagingModule` and `OutboxModule` (consumers and deduplicator) and `JobsModule`. The
  * templates are loaded when the module is built: missing ones stop the start-up.
  */
-@Module({
-  providers: [
-    clockProvider,
-    codeEmailUnitOfWorkProvider,
-    codeEmailDeliveriesProvider,
-    codeEmailQueueProvider,
-    emailRendererProvider,
-    emailSenderProvider,
-    requestCodeEmailProvider,
-    sendCodeEmailProvider,
-    expireCodeEmailsProvider,
-    OneTimeCodeIssuedHandler,
-    sendCodeEmailHandlerProvider,
-    expireCodeEmailsHandlerProvider,
-  ],
-})
-export class EmailModule {}
+@Module({})
+export class EmailModule {
+  // #region Methods
+  /**
+   * Selects the producer and scheduling providers, worker providers, or both for this process.
+   *
+   * @param {NotificationProcessRole} role - Notification process composition.
+   * @returns {DynamicModule} Email module with the selected capabilities.
+   */
+  public static forRole(role: NotificationProcessRole): DynamicModule {
+    const providers: Provider[] = [
+      clockProvider,
+      codeEmailUnitOfWorkProvider,
+      codeEmailDeliveriesProvider,
+    ];
+    if (role !== 'worker') {
+      providers.push(
+        codeEmailQueueProvider,
+        requestCodeEmailProvider,
+        OneTimeCodeIssuedHandler,
+        expireCodeEmailsScheduleHandlerProvider,
+      );
+    }
+    if (role !== 'api') {
+      providers.push(
+        emailRendererProvider,
+        emailSenderProvider,
+        sendCodeEmailProvider,
+        expireCodeEmailsProvider,
+        sendCodeEmailHandlerProvider,
+        expireCodeEmailsHandlerProvider,
+      );
+    }
+    return { module: EmailModule, providers };
+  }
+  // #endregion
+}

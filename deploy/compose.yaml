@@ -24,6 +24,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: '3016'
+      NOTIFICATION_PROCESS_ROLE: ${NOTIFICATION_SERVICE_PROCESS_ROLE:-combined}
       DATABASE_URL: ${NOTIFICATION_SERVICE_DATABASE_URL}
       NATS_URL: ${NATS_URL}
       NATS_USER: notification
@@ -47,6 +48,33 @@ services:
       retries: 5
       start_period: 20s
     deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  notification-service-worker:
+    image: ghcr.io/${GHCR_OWNER}/cadenway-notification-service:${NOTIFICATION_SERVICE_VERSION}
+    restart: unless-stopped
+    environment:
+      PORT: '3016'
+      NOTIFICATION_PROCESS_ROLE: worker
+      DATABASE_URL: ${NOTIFICATION_SERVICE_DATABASE_URL}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM}
+      WEB_APP_URL: ${PUBLIC_SCHEME:-https}://app.${DOMAIN}
+    networks:
+      - internal
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3016/health/ready']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    deploy:
+      replicas: ${NOTIFICATION_SERVICE_WORKER_REPLICAS:-0}
       resources:
         limits:
           memory: 256M

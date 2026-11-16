@@ -14,7 +14,9 @@ preferences, the inbox or the other eleven templates, which come with later phas
 
 ## Public entry points
 
-None. `EmailModule` is registered by `src/app.module.ts`; no other module imports it.
+None for other capabilities. The Notification root modules compose `EmailModule` for the
+combined, API or worker process. The API receives events, enqueues jobs and registers the expiry
+schedule. The worker runs the send and expiry jobs and owns the SMTP adapter.
 
 ## Owned tables
 
