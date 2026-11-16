@@ -6,7 +6,7 @@
     "deleteOutDir": true,
     "assets": [
       {
-        "include": "modules/email/infrastructure/templates/generated/*.js",
+        "include": "modules/email/infrastructure/adapters/templates/generated/*.js",
         "watchAssets": true
       }
     ]

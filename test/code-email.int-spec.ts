@@ -2,23 +2,21 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
-
 import { eventSchemas } from '@cadenway/contracts/events/identity-service';
 import type { OneTimeCodeIssuedV1 } from '@cadenway/contracts/events/identity-service';
 import { createApplication, loadConfig, runWithOrganizationContext } from '@cadenway/nest-common';
 import { SystemTransactionRunner, TenantTransactionRunner } from '@cadenway/nest-common/database';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-
 import { AppModule } from '../src/app.module.js';
 import { appConfigSchema } from '../src/config/app-config.js';
-import { ExpireCodeEmails } from '../src/modules/email/application/commands/expire-code-emails.js';
-import { CODE_EMAIL_DELIVERIES } from '../src/modules/email/application/ports/code-email-deliveries.port.js';
-import type { CodeEmailDeliveries } from '../src/modules/email/application/ports/code-email-deliveries.port.js';
-import { CODE_EMAIL_QUEUE } from '../src/modules/email/application/ports/code-email-queue.port.js';
-import type { CodeEmailQueue } from '../src/modules/email/application/ports/code-email-queue.port.js';
-import { CodeValidity } from '../src/modules/email/domain/code-email.js';
-import { OneTimeCode } from '../src/modules/email/domain/one-time-code.js';
+import { ExpireCodeEmails } from '../src/modules/email/application/use-cases/commands/code-email/expire-code-emails/expire-code-emails.use-case.js';
+import { CODE_EMAIL_DELIVERIES } from '../src/modules/email/composition/tokens/code-email/code-email-deliveries.token.js';
+import type { CodeEmailDeliveries } from '../src/modules/email/application/ports/outbound/persistence/code-email/code-email-deliveries.port.js';
+import { CODE_EMAIL_QUEUE } from '../src/modules/email/composition/tokens/code-email/code-email-queue.token.js';
+import type { CodeEmailQueue } from '../src/modules/email/application/ports/outbound/jobs/code-email/code-email-queue.port.js';
+import { CodeValidity } from '../src/modules/email/domain/value-objects/code-email/code-validity.value-object.js';
+import { OneTimeCode } from '../src/modules/email/domain/value-objects/code-email/one-time-code.value-object.js';
 
 // The code e-mails end to end, on the dependencies of compose.dev.yaml started as a throwaway
 // Compose project on free ports: PostgreSQL with the two roles of cadenway-ops, NATS with the

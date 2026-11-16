@@ -26,6 +26,7 @@ export default defineConfig({
       exclude: [
         'src/**/*.spec.ts',
         'src/**/*.int-spec.ts',
+        'src/**/*.fixture.ts',
         'src/**/testing/**',
         'src/main.ts',
         'src/migrate.ts',

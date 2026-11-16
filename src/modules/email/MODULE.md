@@ -95,8 +95,8 @@ is never replayed, it expires within minutes. An event whose `expiresAt` does no
   `scripts/build-email-templates.mjs` compiles the MJML with `mjml-core` and `mjml-preset-core`
   (development dependencies; `mjml` itself is refused by the trust policy of pnpm), with strict
   validation, then precompiles the three parts with Handlebars in strict mode, into
-  `templates/generated/email-templates.js`, which is not committed. `pnpm build`, `pnpm start:dev`
-  and Vitest run it; the image loads `handlebars/runtime` only.
+  `infrastructure/adapters/templates/generated/email-templates.js`, which is not committed.
+  `pnpm build`, `pnpm start:dev` and Vitest run it; the image loads `handlebars/runtime` only.
 - **Copy.** French, from the two templates of the Emails artboard, adapted to a 6-digit code valid
   10 minutes: the code block of "Code de connexion" ("Valable 10 minutes, une seule fois") replaces
   the link of "Confirmation de l’adresse", and every mention of the validity reads as the lifetime

@@ -16,7 +16,7 @@ export default defineConfig(
     '.claude/',
     '.codex/',
     // The e-mail templates compiled by scripts/build-email-templates.mjs.
-    'src/modules/email/infrastructure/templates/generated/',
+    'src/modules/email/infrastructure/adapters/templates/generated/',
   ]),
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,

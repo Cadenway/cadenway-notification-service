@@ -11,7 +11,7 @@ l’adresse" (`email-verification`) and "Code de connexion" (`sign-in`).
 
 ## Build
 
-- A template is a folder of `src/modules/email/infrastructure/templates/`: `html.mjml` (MJML with
+- A template is a folder of `src/modules/email/infrastructure/adapters/templates/`: `html.mjml` (MJML with
   Handlebars placeholders), `text.hbs` (the text part) and `subject.hbs`. Shared pieces sit in
   `partials/`: a head partial is a whole `<mjml><mj-head>` document included inside the `mj-head`
   of the template (MJML keeps the first `mj-head` only); a body partial is bare MJML.
