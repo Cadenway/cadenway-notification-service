@@ -16,3 +16,10 @@ allowBuilds:
 minimumReleaseAge: 0
 # Refuse a package version with weaker trust evidence than an earlier release.
 trustPolicy: no-downgrade
+
+# MJML uses cssnano 7 itself, while its htmlnano 3.3.1 dependency requires cssnano 8.
+# Keep each tool on its compatible major until MJML aligns those dependencies.
+packageExtensions:
+  htmlnano@3.3.1:
+    dependencies:
+      cssnano: ^8.0.0
