@@ -1,0 +1,14 @@
+<mj-section padding="0 4px 24px 4px">
+  <mj-group>
+    <mj-column width="50%">
+      <mj-text font-size="14px" line-height="20px" font-weight="700" letter-spacing="-0.035em">
+        Cadenway
+      </mj-text>
+    </mj-column>
+    <mj-column width="50%">
+      <mj-text align="right" color="#5f616a" font-size="12px" line-height="20px">
+        Sécurité · toujours envoyé
+      </mj-text>
+    </mj-column>
+  </mj-group>
+</mj-section>

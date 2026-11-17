@@ -22,6 +22,16 @@ import { sendInvitationEmailProvider } from './composition/providers/use-cases/i
 import { expireInvitationEmailsProvider } from './composition/providers/use-cases/invitation-email/expire-invitation-emails.provider.js';
 import { sendInvitationEmailHandlerProvider } from './composition/providers/adapters/invitation-email/send-invitation-email-handler.provider.js';
 import { expireInvitationEmailsHandlerProvider } from './composition/providers/adapters/invitation-email/expire-invitation-emails-handler.provider.js';
+import { AccountSecurityEventsHandler } from './presentation/messaging/handlers/identity/account-security-events.handler.js';
+import { securityEmailUnitOfWorkProvider } from './composition/providers/adapters/security-email/security-email-unit-of-work.provider.js';
+import { securityEmailDeliveriesProvider } from './composition/providers/adapters/security-email/security-email-deliveries.provider.js';
+import { securityEmailQueueProvider } from './composition/providers/adapters/security-email/security-email-queue.provider.js';
+import { securityEmailRendererProvider } from './composition/providers/adapters/security-email/security-email-renderer.provider.js';
+import { requestSecurityEmailProvider } from './composition/providers/use-cases/security-email/request-security-email.provider.js';
+import { sendSecurityEmailProvider } from './composition/providers/use-cases/security-email/send-security-email.provider.js';
+import { expireSecurityEmailsProvider } from './composition/providers/use-cases/security-email/expire-security-emails.provider.js';
+import { sendSecurityEmailHandlerProvider } from './composition/providers/adapters/security-email/send-security-email-handler.provider.js';
+import { expireSecurityEmailsHandlerProvider } from './composition/providers/adapters/security-email/expire-security-emails-handler.provider.js';
 
 /**
  * Class EmailModule
@@ -29,14 +39,18 @@ import { expireInvitationEmailsHandlerProvider } from './composition/providers/a
  * @description
  * The e-mails of the service. In this version:
  *
- * - the two e-mails that carry a single-use code: `one-time-code.issued.v1` of identity-service,
+ * - the three e-mails that carry a single-use code: `one-time-code.issued.v1` of identity-service,
  *   read from `EVENTS_RESTRICTED`, becomes a delivery of the send log and a durable job, which
  *   renders the template compiled at build time and sends it through the SMTP server of the
  *   configuration; a scheduled sweep settles the deliveries whose code expired before they could
  *   leave;
  * - the "Invitation" e-mail: `invitation.issued.v1` of organization-service, read from `EVENTS`,
  *   follows the same path in the tenant transactions of its organization, with its own send log,
- *   job and hourly sweep.
+ *   job and hourly sweep;
+ * - the security e-mails of the account events of identity-service (reset link, password changed,
+ *   address changed, new sign-in, deletion scheduled or cancelled): one consumer per event, the
+ *   reset link read from `EVENTS_RESTRICTED` and the others from `EVENTS`, the same path in system
+ *   transactions, with their own send log, job and sweep.
  *
  * See its `MODULE.md`. It relies on the global modules of `AppModule`: `CONFIG`, `DatabaseModule`
  * (tenant and system transaction runners), `MessagingModule` and `OutboxModule` (consumers and
@@ -68,6 +82,16 @@ import { expireInvitationEmailsHandlerProvider } from './composition/providers/a
     InvitationIssuedHandler,
     sendInvitationEmailHandlerProvider,
     expireInvitationEmailsHandlerProvider,
+    securityEmailUnitOfWorkProvider,
+    securityEmailDeliveriesProvider,
+    securityEmailQueueProvider,
+    securityEmailRendererProvider,
+    requestSecurityEmailProvider,
+    sendSecurityEmailProvider,
+    expireSecurityEmailsProvider,
+    AccountSecurityEventsHandler,
+    sendSecurityEmailHandlerProvider,
+    expireSecurityEmailsHandlerProvider,
   ],
 })
 export class EmailModule {}

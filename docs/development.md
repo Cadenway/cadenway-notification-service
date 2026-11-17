@@ -11,9 +11,11 @@ the internal token on every route but the health probes, connects to NATS as the
 user, runs the outbox relay and the dead-letter worker of the platform, and its readiness checks
 PostgreSQL and NATS. The first migration creates the tables of the service kit, owned by the
 platform module (`src/modules/platform/MODULE.md`). The email module (`src/modules/email/MODULE.md`)
-consumes `one-time-code.issued.v1` of identity-service from `EVENTS_RESTRICTED` and sends the
-"Confirmation de l’adresse" and "Code de connexion" e-mails through a durable job of
-`@cadenway/nest-jobs` and the SMTP server of the configuration; its migration creates its send log.
+consumes `one-time-code.issued.v1` and `password-reset-link.issued.v1` of identity-service from
+`EVENTS_RESTRICTED`, the account notices of identity-service and `invitation.issued.v1` of
+organization-service from `EVENTS`, and sends the code, invitation and security e-mails through
+durable jobs of `@cadenway/nest-jobs` and the SMTP server of the configuration; its migrations
+create its send logs.
 No route exists yet, and `@cadenway/contracts` defines no event of this service, so nothing is
 published. The target architecture in this guide is what the next modules must follow.
 
@@ -172,9 +174,17 @@ token. It moves to the fixtures of `@cadenway/nest-testing` once that package ex
 `tests/code-email.int-spec.ts` starts its own throwaway project, with Mailpit. It publishes
 `one-time-code.issued.v1` as the `identity` user of the broker and checks that the e-mail with the
 code reaches the HTTP API of Mailpit, with its headers; that a redelivered event sends one e-mail,
-and that an expired code and an address-change code send none; that no user but `notification` can
-read `EVENTS_RESTRICTED`; that no tenant transaction sees the send log; and that no log line holds a
-code or the address of the recipient.
+and that an expired code sends none; that the address-change code reaches the new address; that no
+user but `notification` can read `EVENTS_RESTRICTED`; that no tenant transaction sees the send log;
+and that no log line holds a code or the address of the recipient.
+
+`tests/security-email.int-spec.ts` starts its own throwaway project, with Mailpit. It publishes the
+reset link and the five account notices of identity-service as the `identity` user and checks that
+each e-mail reaches Mailpit with its subject, content and no unsubscription header; that a
+redelivered event sends one e-mail and an expired link none; that once the e-mail left, the reset
+token is in no row of the database (send log, pending contents, jobs) and in no log line; that no
+tenant transaction sees the send log; and that the `notification` user reads through its granted
+consumers only, by their exact names and filters.
 
 ## Minimum checks by change
 

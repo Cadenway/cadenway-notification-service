@@ -142,18 +142,10 @@ export class OneTimeCodeIssuedHandler implements OnApplicationBootstrap {
         this.logger.log({ ...fields, deliveryId: result.deliveryId }, 'code e-mail queued');
         break;
       case 'skipped':
-        // A purpose without template is a code nobody receives: an operator must see it.
-        if (result.reason === 'purpose-not-supported') {
-          this.logger.warn(
-            { ...fields, deliveryId: result.deliveryId, reason: result.reason },
-            'code e-mail not sent: no template for this purpose yet',
-          );
-        } else {
-          this.logger.log(
-            { ...fields, deliveryId: result.deliveryId, reason: result.reason },
-            'code e-mail skipped',
-          );
-        }
+        this.logger.log(
+          { ...fields, deliveryId: result.deliveryId, reason: result.reason },
+          'code e-mail skipped',
+        );
         break;
       case 'duplicate':
         this.logger.log(fields, 'code e-mail already recorded for this event');

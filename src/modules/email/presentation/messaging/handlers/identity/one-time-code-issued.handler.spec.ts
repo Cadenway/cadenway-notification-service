@@ -160,7 +160,7 @@ describe('OneTimeCodeIssuedHandler', () => {
     expect(sender.sent[0]).toMatchObject({
       to: { address: 'camille.martin@ateliernord.fr', name: 'Camille Martin' },
       subject: 'Confirmez votre adresse pour activer votre compte',
-      oneClickUnsubscribe: false,
+      unsubscribe: false,
     });
     expect(sender.sent[0]?.text).toContain('    482 913\n');
   });
@@ -197,13 +197,25 @@ describe('OneTimeCodeIssuedHandler', () => {
     expect(deliveries.deliveries.size).toBe(1);
   });
 
-  it('sends nothing yet for an address-change code', async () => {
-    await deliver(issuedEvent({ purpose: 'email-change' }));
+  it('sends an address-change code to the new address, valid 15 minutes', async () => {
+    await deliver(
+      issuedEvent({
+        purpose: 'email-change',
+        actor: { type: 'user', id: '01938f6e-8a42-7d5b-b2c9-5e1f3a6d9c24' },
+        expiresAt: '2026-11-09T13:22:00.000Z',
+        recipient: { email: 'camille@ateliernord.fr', name: 'Camille Martin' },
+      }),
+    );
     await workQueue();
 
-    expect(sender.sent).toEqual([]);
-    expect([...deliveries.deliveries.values()]).toMatchObject([
-      { status: 'skipped', skipReason: 'purpose-not-supported' },
+    expect(sender.sent).toMatchObject([
+      {
+        subject: 'Confirmez votre nouvelle adresse e-mail',
+        to: { address: 'camille@ateliernord.fr', name: 'Camille Martin' },
+        unsubscribe: false,
+      },
     ]);
+    expect(sender.sent[0]?.text).toContain('Valable 15 minutes, une seule fois');
+    expect([...deliveries.deliveries.values()]).toMatchObject([{ status: 'sent' }]);
   });
 });

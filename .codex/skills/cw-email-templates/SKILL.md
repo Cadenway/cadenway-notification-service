@@ -6,9 +6,13 @@ description: "How cadenway-notification-service builds and sends its emails: MJM
 # Email templates
 
 The 13 emails of the mockup (Emails artboard) are owned by this service. Copy is French and comes
-from the mockup. Three exist today, in `src/modules/email` (its `MODULE.md`): "Confirmation de
-l’adresse" (`email-verification`), "Code de connexion" (`sign-in`) and "Invitation"
-(`invitation`).
+from the mockup; an email the artboard lacks is new copy in its style, listed in the pull request.
+Ten exist today, in `src/modules/email` (its `MODULE.md`): "Confirmation de l’adresse"
+(`email-verification`), "Code de connexion" (`sign-in`), the address-change code (`email-change`),
+"Invitation" (`invitation`), and the security emails of the account events: "Réinitialisation du
+mot de passe" (`password-reset`), "Mot de passe modifié" (`password-changed`), the notice to the
+previous address (`email-changed`), "Nouvelle connexion" (`new-device`), "Suppression du compte"
+(`deletion-scheduled`) and the cancelled deletion (`deletion-cancelled`).
 
 ## Build
 
@@ -41,17 +45,22 @@ whose `chokidar@4.0.3` is refused by the `trustPolicy` of `pnpm-workspace.yaml`,
 
 - Every email has a text part and an HTML part, written together.
 - Subject of 60 characters at most, preheader of 90 at most.
-- Dates and times are rendered in the recipient's time zone; an invitee, who may have no account
-  yet, gets those of Paris, the time zone of the mockup.
+- Dates and times are rendered in the recipient's time zone, "(heure de Paris)" for Paris as the
+  mockup writes it and the offset elsewhere ("(UTC−5)"); a time zone the runtime does not know,
+  and an invitee, who may have no account yet, get those of Paris, the time zone of the mockup.
 - The HTML part escapes the values it receives; the text part and the subject do not.
+- A security email shows its frame: "Sécurité · toujours envoyé" in the header and "E-mail de
+  sécurité lié à votre compte : il ne peut pas être désactivé." in the footer
+  (`partials/security-header.mjml`, `partials/security-footer.mjml`). The rows "Appareil",
+  "Adresse IP" and "Date" (`partials/client-rows.mjml`) replace the "Lieu (approximatif)" of the
+  mockup: no place is derived from the IP address.
 
 ## Headers and consent
 
-- Every email carries `List-Unsubscribe`, to Compte › Notifications of the web application
-  (`WEB_APP_URL`); a notification email also shows the manage-notifications link in its footer,
-  which the security emails of the mockup do not.
-- `List-Unsubscribe-Post` (one-click) is added to every email except security emails, which are
-  always sent.
+- An email that can be turned off carries `List-Unsubscribe`, to Compte › Notifications of the web
+  application (`WEB_APP_URL`), and its one-click form `List-Unsubscribe-Post`; a notification email
+  also shows the manage-notifications link in its footer.
+- A security email, always sent, carries neither header nor link: it cannot be turned off.
 - An address on the suppression list is not written to. Bounces and complaints reach the service
   through a signed route and feed that list.
 - Sending subdomains are separate; which ones is not decided yet and belongs to cadenway-ops.
@@ -70,6 +79,8 @@ whose `chokidar@4.0.3` is refused by the `trustPolicy` of `pnpm-workspace.yaml`,
 ## Tests
 
 - A template test renders with the mockup fixtures (Atelier Nord, Camille Martin, CAD-482) and
-  checks the subject, the text part and the presence of the unsubscribe headers.
-- `tests/code-email.int-spec.ts` and `tests/invitation-email.int-spec.ts` send through a
-  disposable Mailpit (`compose.dev.yaml`) and read the emails back from its HTTP API.
+  checks the subject, the preheader, the text part and the escaping of the HTML part; the sender
+  decides the unsubscribe headers.
+- `tests/code-email.int-spec.ts`, `tests/invitation-email.int-spec.ts` and
+  `tests/security-email.int-spec.ts` send through a disposable Mailpit (`compose.dev.yaml`) and
+  read the emails back, with their headers, from its HTTP API.

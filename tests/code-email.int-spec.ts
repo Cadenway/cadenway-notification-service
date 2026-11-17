@@ -444,9 +444,8 @@ describe('code e-mails', () => {
     expect(message.Text).toMatch(/^ {4}482 913\r?$/mu);
     expect(message.Text).toContain('Bonjour Camille Martin, votre compte a été créé.');
     expect(message.HTML).toContain('482 913');
-    expect(headers['List-Unsubscribe']).toEqual([
-      '<http://app.cadenway.localhost/account/notifications>',
-    ]);
+    // A security e-mail cannot be turned off: it offers no unsubscription.
+    expect(headers).not.toHaveProperty('List-Unsubscribe');
     expect(headers).not.toHaveProperty('List-Unsubscribe-Post');
 
     await waitUntilSettled(signUp.id);
@@ -508,17 +507,23 @@ describe('code e-mails', () => {
     ]);
   });
 
-  it('does not send an address-change code yet', async () => {
+  it('sends an address-change code to the new address, valid 15 minutes', async () => {
     const change = codeIssued('email-change', codes.emailChange, {
       actor: { type: 'user', id: camilleMartin.id },
+      recipient: { email: 'camille@ateliernord.fr', name: camilleMartin.name },
     });
 
     publishAsIdentity(change, change.id);
-    await waitUntilHandled();
 
-    expect(await waitForMessages(2)).toHaveLength(2);
+    const [latest] = await waitForMessages(3);
+    expect(latest?.Subject).toBe('Confirmez votre nouvelle adresse e-mail');
+    const message = await mailpit<MailpitMessage>(`/api/v1/message/${latest?.ID ?? ''}`);
+    expect(message.To).toEqual([{ Name: camilleMartin.name, Address: 'camille@ateliernord.fr' }]);
+    expect(message.Text).toMatch(/^ {4}208 457\r?$/mu);
+    expect(message.Text).toContain('Valable 15 minutes, une seule fois');
+    await waitUntilSettled(change.id);
     expect(await deliveriesOf(change.id)).toMatchObject([
-      { status: 'skipped', skip_reason: 'purpose-not-supported', pending: false },
+      { status: 'sent', skip_reason: null, sent: true, pending: false },
     ]);
   });
 

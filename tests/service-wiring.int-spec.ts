@@ -71,11 +71,13 @@ const serviceTables = [
   'outbox_events',
   'pending_code_emails',
   'pending_invitation_emails',
+  'pending_security_emails',
   'processed_events',
+  'security_email_deliveries',
 ] as const;
 
 /** The migrations of the service, all applied by the migrator. */
-const migrationCount = 3;
+const migrationCount = 4;
 
 /**
  * Runs `docker compose` on the throwaway project.
@@ -421,7 +423,7 @@ describe('notification-service wiring', () => {
     expect(journal.rows).toEqual([{ applied: migrationCount }]);
   });
 
-  it('forces row-level security on the tables that carry an organization or a code', async () => {
+  it('forces row-level security on the tables that carry an organization, a code or personal data', async () => {
     const tables = await migrator.query<{
       relname: string;
       relrowsecurity: boolean;
@@ -444,7 +446,9 @@ describe('notification-service wiring', () => {
       { relname: 'outbox_events', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'pending_code_emails', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'pending_invitation_emails', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'pending_security_emails', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'processed_events', relrowsecurity: false, relforcerowsecurity: false },
+      { relname: 'security_email_deliveries', relrowsecurity: true, relforcerowsecurity: true },
     ]);
     expect(policies.rows).toEqual([
       {
@@ -462,6 +466,11 @@ describe('notification-service wiring', () => {
       {
         tablename: 'pending_invitation_emails',
         policyname: 'pending_invitation_emails_organization_isolation',
+      },
+      { tablename: 'pending_security_emails', policyname: 'pending_security_emails_system_access' },
+      {
+        tablename: 'security_email_deliveries',
+        policyname: 'security_email_deliveries_system_access',
       },
     ]);
   });

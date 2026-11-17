@@ -41,10 +41,10 @@ import { PlatformModule } from './modules/platform/platform.module.js';
  *   consumer gave up on by its sequence and copies it into `EVENTS_DLQ` on
  *   `dlq.<consumer>.<subject>`. The copy of a restricted event keeps its headers only
  *   (`restrictedDeadLetterPayload: 'drop'`, the default of the kit, stated here on purpose): its
- *   body may hold a single-use code, which would otherwise stay 30 days in `EVENTS_DLQ`.
- *   `restrictedEvents` lists `RESTRICTED_EVENT_NAMES` of the identity-service events of
- *   `@cadenway/contracts` (`one-time-code.issued.v1`): their consumers read `EVENTS_RESTRICTED` on
- *   `restricted.<name>`. The service publishes nothing yet: `@cadenway/contracts` defines no event
+ *   body may hold a single-use code or a reset token, which would otherwise stay 30 days in
+ *   `EVENTS_DLQ`. `restrictedEvents` lists `RESTRICTED_EVENT_NAMES` of the identity-service events
+ *   of `@cadenway/contracts` (`one-time-code.issued.v1`, `password-reset-link.issued.v1`): their
+ *   consumers read `EVENTS_RESTRICTED` on `restricted.<name>`. The service publishes nothing yet: `@cadenway/contracts` defines no event
  *   of its own.
  * - `OutboxModule`: the outbox writer, the PostgreSQL deduplicator and the relay, which polls
  *   `outbox_events` every second in a system transaction and publishes the pending rows. It runs in
@@ -64,8 +64,8 @@ import { PlatformModule } from './modules/platform/platform.module.js';
  *   `src/config/job-queues.ts` as the migrator role; the start-up fails while they are missing.
  *   Running jobs get 30 seconds to finish at shutdown.
  * - `PlatformModule`: the owner of the kit tables in the migrations of the service.
- * - `EmailModule`: the e-mails that carry a single-use code and the invitation e-mail
- *   (`src/modules/email/MODULE.md`).
+ * - `EmailModule`: the e-mails that carry a single-use code, the invitation e-mail and the
+ *   security e-mails of the account events (`src/modules/email/MODULE.md`).
  *
  * Business modules under `src/modules/` are registered here as they are created.
  */

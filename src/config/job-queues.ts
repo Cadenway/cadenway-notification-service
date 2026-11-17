@@ -95,6 +95,54 @@ export const EXPIRE_INVITATION_EMAILS_QUEUE: string = 'email.expire-invitations'
 export const EXPIRE_INVITATION_EMAILS_CRON: string = '0 * * * *';
 
 /**
+ * Constant SEND_SECURITY_EMAIL_QUEUE
+ *
+ * @description
+ * Queue of the security e-mails of the account events of identity-service (reset link, password
+ * changed, address changed, new sign-in, deletion scheduled or cancelled). One job per e-mail,
+ * whose payload is the id of its row in `security_email_deliveries` and whose occurrence key is
+ * that same id, so the same e-mail is never enqueued twice.
+ *
+ * @type {string}
+ */
+export const SEND_SECURITY_EMAIL_QUEUE: string = 'email.send-security';
+
+/**
+ * Constant SEND_SECURITY_EMAIL_MAX_ATTEMPTS
+ *
+ * @description
+ * Attempts a security e-mail gets, the first one included: `retryLimit + 1` of its queue. The
+ * handler marks the delivery `failed` when the last one fails.
+ *
+ * @type {number}
+ */
+export const SEND_SECURITY_EMAIL_MAX_ATTEMPTS: number = 5;
+
+/**
+ * Constant EXPIRE_SECURITY_EMAILS_QUEUE
+ *
+ * @description
+ * Queue of the sweep that settles the security e-mails whose window closed before they could
+ * leave, and deletes their address, device and reset token. Scheduled by
+ * `EXPIRE_SECURITY_EMAILS_CRON`; its jobs carry no payload.
+ *
+ * @type {string}
+ */
+export const EXPIRE_SECURITY_EMAILS_QUEUE: string = 'email.expire-security';
+
+/**
+ * Constant EXPIRE_SECURITY_EMAILS_CRON
+ *
+ * @description
+ * When the sweep of the security e-mails runs: every 5 minutes, in UTC, as for the codes. A reset
+ * token outlives the expiry of its link by 5 minutes at most, plus the 40 seconds pg-boss takes to
+ * evaluate a schedule.
+ *
+ * @type {string}
+ */
+export const EXPIRE_SECURITY_EMAILS_CRON: string = '*/5 * * * *';
+
+/**
  * Constant jobQueues
  *
  * @description
@@ -126,6 +174,17 @@ export const EXPIRE_INVITATION_EMAILS_CRON: string = '0 * * * *';
  * - finished rows are deleted after an hour and dead letters after a day.
  *
  * `email.expire-invitations` runs a short statement, like `email.expire-codes`.
+ *
+ * `email.send-security` is tuned to its two kinds of e-mails: the reset link, waited for on a
+ * screen and valid 30 minutes, and the notices, sent within a day of their event:
+ *
+ * - 4 retries with backoff from 10 seconds, capped at 2 minutes, as for the codes;
+ * - an attempt is failed after 120 seconds, as for the codes;
+ * - a job that waited a day without starting is deleted: its window would be closed, and the sweep
+ *   settles its delivery;
+ * - finished rows are deleted after an hour and dead letters after a day.
+ *
+ * `email.expire-security` runs a short statement, like `email.expire-codes`.
  *
  * @type {readonly JobQueueDeclaration[]}
  */
@@ -164,6 +223,27 @@ export const jobQueues: readonly JobQueueDeclaration[] = [
   },
   {
     name: EXPIRE_INVITATION_EMAILS_QUEUE,
+    retryLimit: 2,
+    retryDelaySeconds: 30,
+    retryBackoff: false,
+    expireInSeconds: 60,
+    retentionSeconds: 900,
+    deleteAfterSeconds: 3_600,
+    deadLetterRetentionSeconds: 86_400,
+  },
+  {
+    name: SEND_SECURITY_EMAIL_QUEUE,
+    retryLimit: SEND_SECURITY_EMAIL_MAX_ATTEMPTS - 1,
+    retryDelaySeconds: 10,
+    retryBackoff: true,
+    retryDelayMaxSeconds: 120,
+    expireInSeconds: 120,
+    retentionSeconds: 86_400,
+    deleteAfterSeconds: 3_600,
+    deadLetterRetentionSeconds: 86_400,
+  },
+  {
+    name: EXPIRE_SECURITY_EMAILS_QUEUE,
     retryLimit: 2,
     retryDelaySeconds: 30,
     retryBackoff: false,

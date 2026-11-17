@@ -139,13 +139,7 @@ export class SendCodeEmail {
       await this.unitOfWork.run(() => this.deliveries.markSkipped(delivery.id, 'expired'));
       return { outcome: 'skipped', reason: 'expired' };
     }
-    const template: CodeEmailTemplate | null = codeEmailTemplateFor(delivery.purpose);
-    if (template === null) {
-      await this.unitOfWork.run(() =>
-        this.deliveries.markSkipped(delivery.id, 'purpose-not-supported'),
-      );
-      return { outcome: 'skipped', reason: 'purpose-not-supported' };
-    }
+    const template: CodeEmailTemplate = codeEmailTemplateFor(delivery.purpose);
     const content: CodeEmailDelivery['content'] = delivery.content;
     if (content === null) {
       await this.unitOfWork.run(() => this.deliveries.markFailed(delivery.id));
@@ -166,7 +160,7 @@ export class SendCodeEmail {
         ...rendered,
         id: delivery.id,
         to: { address: content.recipientEmail, name: content.recipientName },
-        oneClickUnsubscribe: false,
+        unsubscribe: false,
       });
     } catch (error) {
       if (input.lastAttempt) {

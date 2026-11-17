@@ -161,7 +161,7 @@ export class SendInvitationEmail {
         ...rendered,
         id: delivery.id,
         to: { address: content.recipientEmail, name: '' },
-        oneClickUnsubscribe: true,
+        unsubscribe: true,
       });
     } catch (error) {
       if (input.lastAttempt) {

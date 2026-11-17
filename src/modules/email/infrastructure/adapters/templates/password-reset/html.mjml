@@ -1,0 +1,55 @@
+<mjml lang="fr">
+  <mj-head>
+    <mj-include path="../partials/head.mjml" />
+    <mj-preview
+      >Lien valable {{ validityMinutes }} minutes. Ignorez cet e-mail si la demande ne vient pas de
+      vous.</mj-preview
+    >
+  </mj-head>
+  <mj-body background-color="#f2f2f4" width="600px">
+    <mj-wrapper padding="32px 20px">
+      <mj-include path="../partials/security-header.mjml" />
+      <mj-section
+        background-color="#ffffff"
+        border="1px solid #e4e4e7"
+        border-radius="12px"
+        padding="32px"
+      >
+        <mj-column>
+          <mj-text font-size="20px" line-height="28px" font-weight="600" padding="0 0 20px 0">
+            Choisir un nouveau mot de passe
+          </mj-text>
+          <mj-text padding="0 0 20px 0">
+            Une réinitialisation a été demandée pour <strong>{{ recipientEmail }}</strong
+            >. Choisissez un nouveau mot de passe avec le bouton ci-dessous.
+          </mj-text>
+          <mj-button
+            href="{{resetUrl}}"
+            align="left"
+            background-color="#7c3aed"
+            color="#ffffff"
+            padding="0 0 20px 0"
+          >
+            Choisir un nouveau mot de passe
+          </mj-button>
+          <mj-text color="#5f616a" font-size="12px" line-height="20px" padding="0 0 20px 0">
+            Le bouton ne fonctionne pas ? Copiez ce lien dans votre navigateur :<br /><span
+              style="
+                color: #18181b;
+                font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                word-break: break-all;
+              "
+              >{{ resetUrl }}</span
+            >
+          </mj-text>
+          <mj-include path="../partials/client-rows.mjml" />
+          <mj-text color="#5f616a" font-size="12px" line-height="20px">
+            Le lien expire dans {{ validityMinutes }} minutes. Votre mot de passe actuel reste
+            valable tant que vous n’en choisissez pas un nouveau.
+          </mj-text>
+        </mj-column>
+      </mj-section>
+      <mj-include path="../partials/security-footer.mjml" />
+    </mj-wrapper>
+  </mj-body>
+</mjml>

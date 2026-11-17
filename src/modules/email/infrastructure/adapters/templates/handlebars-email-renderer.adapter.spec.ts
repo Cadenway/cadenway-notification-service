@@ -5,8 +5,13 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RenderedEmail } from '../../../application/models/code-email/rendered-email.model.js';
 import type { InvitationEmailMessage } from '../../../application/models/invitation-email/invitation-email-message.model.js';
+import type { SecurityEmailClient } from '../../../application/models/security-email/security-email-client.model.js';
+import type { SecurityEmailDetails } from '../../../application/models/security-email/security-email-details.model.js';
+import type { SecurityEmailMessage } from '../../../application/models/security-email/security-email-message.model.js';
 import type { CodeEmailTemplate } from '../../../domain/value-objects/code-email/code-email-template.value-object.js';
 import { OneTimeCode } from '../../../domain/value-objects/code-email/one-time-code.value-object.js';
+import { ResetLinkToken } from '../../../domain/value-objects/security-email/reset-link-token.value-object.js';
+import type { SecurityEmailTemplate } from '../../../domain/value-objects/security-email/security-email-template.value-object.js';
 import { HandlebarsEmailRenderer } from './handlebars-email-renderer.adapter.js';
 
 /**
@@ -95,56 +100,108 @@ describe('HandlebarsEmailRenderer', () => {
     renderer = await HandlebarsEmailRenderer.load(WEB_APP_URL);
   });
 
-  describe.each<CodeEmailTemplate>(['email-verification', 'sign-in'])('%s', (template) => {
-    it('shows the code once in each part, grouped as 482 913, and never as typed', () => {
-      const email: RenderedEmail = render(template);
+  describe.each<CodeEmailTemplate>(['email-verification', 'sign-in', 'email-change'])(
+    '%s',
+    (template) => {
+      it('shows the code once in each part, grouped as 482 913, and never as typed', () => {
+        const email: RenderedEmail = render(template);
 
-      expect(occurrences(email.html, '482 913')).toBe(1);
-      expect(occurrences(email.text, '482 913')).toBe(1);
-      expect(email.html).not.toContain('482913');
-      expect(email.text).not.toContain('482913');
-    });
+        expect(occurrences(email.html, '482 913')).toBe(1);
+        expect(occurrences(email.text, '482 913')).toBe(1);
+        expect(email.html).not.toContain('482913');
+        expect(email.text).not.toContain('482913');
+      });
 
-    it('leaves no variable unrendered', () => {
-      const email: RenderedEmail = render(template);
+      it('leaves no variable unrendered', () => {
+        const email: RenderedEmail = render(template);
 
-      for (const part of [email.subject, email.html, email.text]) {
-        expect(part).not.toMatch(/\{\{|\}\}/u);
-        expect(part).not.toContain('undefined');
-      }
-    });
+        for (const part of [email.subject, email.html, email.text]) {
+          expect(part).not.toMatch(/\{\{|\}\}/u);
+          expect(part).not.toContain('undefined');
+        }
+      });
 
-    it('keeps the subject within 60 characters and the preheader within 90', () => {
-      const email: RenderedEmail = render(template);
+      it('keeps the subject within 60 characters and the preheader within 90', () => {
+        const email: RenderedEmail = render(template);
 
-      expect(email.subject.length).toBeLessThanOrEqual(60);
-      expect(preheaderOf(email.html).length).toBeGreaterThan(0);
-      expect(preheaderOf(email.html).length).toBeLessThanOrEqual(90);
-    });
+        expect(email.subject.length).toBeLessThanOrEqual(60);
+        expect(preheaderOf(email.html).length).toBeGreaterThan(0);
+        expect(preheaderOf(email.html).length).toBeLessThanOrEqual(90);
+      });
 
-    it('says the code is valid 10 minutes, once, and that a security e-mail cannot be turned off', () => {
-      const email: RenderedEmail = render(template);
+      it('says the code is valid 10 minutes, once, and that a security e-mail cannot be turned off', () => {
+        const email: RenderedEmail = render(template);
 
-      for (const part of [visibleTextOf(email.html), email.text]) {
-        expect(part).toContain('Valable 10 minutes, une seule fois');
-        expect(part).toContain(
-          'E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.',
+        for (const part of [visibleTextOf(email.html), email.text]) {
+          expect(part).toContain('Valable 10 minutes, une seule fois');
+          expect(part).toContain(
+            'E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.',
+          );
+          expect(part).toContain('Cadenway · 12 rue de la Charité, 69002 Lyon');
+        }
+      });
+
+      it('mentions no workspace: an account has none at sign-up', () => {
+        const email: RenderedEmail = render(template);
+
+        for (const part of [email.subject, visibleTextOf(email.html), email.text]) {
+          expect(part).not.toContain('espace de travail');
+          expect(part).not.toContain('Atelier Nord');
+        }
+      });
+
+      it('declares French as the language of the HTML part', () => {
+        expect(render(template).html).toMatch(/<html lang="fr"/u);
+      });
+
+      it('shows the frame of the security e-mails: "Sécurité · toujours envoyé"', () => {
+        expect(visibleTextOf(render(template).html)).toContain(
+          'Cadenway Sécurité · toujours envoyé',
         );
-        expect(part).toContain('Cadenway · 12 rue de la Charité, 69002 Lyon');
-      }
+      });
+    },
+  );
+
+  describe('Code de changement d’adresse', () => {
+    it('asks to confirm the new address with a code valid 15 minutes', () => {
+      const email: RenderedEmail = renderer.renderCodeEmail({
+        template: 'email-change',
+        recipientName: 'Camille Martin',
+        code: OneTimeCode.of('208457'),
+        validityMinutes: 15,
+      });
+
+      expect(email.subject).toBe('Confirmez votre nouvelle adresse e-mail');
+      expect(preheaderOf(email.html)).toBe(
+        'Code valable 15 minutes. Ne le communiquez à personne, même à l’assistance.',
+      );
+      expect(visibleTextOf(email.html)).toContain('Confirmez votre nouvelle adresse');
+      expect(email.text).toBe(
+        [
+          'CONFIRMEZ VOTRE NOUVELLE ADRESSE',
+          '',
+          'Bonjour Camille Martin, saisissez ce code dans Cadenway pour faire de cette adresse celle de votre compte.',
+          '',
+          '    208 457',
+          '    Valable 15 minutes, une seule fois',
+          '',
+          'Vous n’avez rien demandé ? Ignorez cet e-mail : l’adresse du compte ne changera pas. Ne communiquez ce code à personne, même à l’assistance.',
+          '',
+          '--',
+          'E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.',
+          'Cadenway · 12 rue de la Charité, 69002 Lyon',
+          '',
+        ].join('\n'),
+      );
     });
 
-    it('mentions no workspace: an account has none at sign-up', () => {
-      const email: RenderedEmail = render(template);
+    it('greets without a name when none is left, and escapes the name in the HTML part', () => {
+      const anonymous: RenderedEmail = render('email-change', '');
+      const marked: RenderedEmail = render('email-change', 'Camille <i>M.</i>');
 
-      for (const part of [email.subject, visibleTextOf(email.html), email.text]) {
-        expect(part).not.toContain('espace de travail');
-        expect(part).not.toContain('Atelier Nord');
-      }
-    });
-
-    it('declares French as the language of the HTML part', () => {
-      expect(render(template).html).toMatch(/<html lang="fr"/u);
+      expect(anonymous.text).toContain('Bonjour, saisissez ce code');
+      expect(marked.html).toContain('Bonjour Camille &lt;i&gt;M.&lt;/i&gt;,');
+      expect(marked.html).not.toContain('<i>M.</i>');
     });
   });
 
@@ -231,6 +288,495 @@ describe('HandlebarsEmailRenderer', () => {
       expect(email.html).toContain(`href="${WEB_APP_URL}/login/code"`);
       expect(visibleTextOf(email.html)).toContain('Ouvrir la page de connexion');
       expect(email.text).toContain(`Ouvrir la page de connexion : ${WEB_APP_URL}/login/code`);
+    });
+  });
+
+  describe('security e-mails', () => {
+    /**
+     * Constant TOKEN
+     *
+     * @description
+     * The token of the example of `password-reset-link.issued.v1` in the contract.
+     *
+     * @type {string}
+     */
+    const TOKEN: string = 'ExampleOnlyResetToken0000000000000000000000';
+
+    /**
+     * Constant firefoxOnWindows
+     *
+     * @description
+     * The browser of Camille Martin in the mockup.
+     *
+     * @type {SecurityEmailClient}
+     */
+    const firefoxOnWindows: SecurityEmailClient = {
+      deviceType: 'desktop',
+      browser: 'Firefox',
+      os: 'Windows',
+      osVersion: null,
+      ipAddress: '192.0.2.14',
+    };
+
+    /**
+     * Constant passwordChangedFromSession
+     *
+     * @description
+     * A change of password from a session, which closes nothing.
+     *
+     * @type {SecurityEmailDetails}
+     */
+    const passwordChangedFromSession: SecurityEmailDetails = {
+      template: 'password-changed',
+      method: 'change',
+      closedSessionCount: 0,
+      client: firefoxOnWindows,
+    };
+
+    /**
+     * Constant DETAILS
+     *
+     * @description
+     * One message of each template, for Camille Martin, as the examples of the contract.
+     *
+     * @type {Readonly<Record<SecurityEmailTemplate, SecurityEmailDetails>>}
+     */
+    const DETAILS: Readonly<Record<SecurityEmailTemplate, SecurityEmailDetails>> = {
+      'password-reset': {
+        template: 'password-reset',
+        token: ResetLinkToken.of(TOKEN),
+        client: firefoxOnWindows,
+      },
+      'password-changed': {
+        template: 'password-changed',
+        method: 'reset',
+        closedSessionCount: 3,
+        client: firefoxOnWindows,
+      },
+      'email-changed': {
+        template: 'email-changed',
+        newEmail: 'camille@ateliernord.fr',
+        client: firefoxOnWindows,
+      },
+      'new-device': {
+        template: 'new-device',
+        client: {
+          deviceType: 'mobile',
+          browser: 'Safari',
+          os: 'iOS',
+          osVersion: '18.1',
+          ipAddress: '86.247.12.30',
+        },
+      },
+      'deletion-scheduled': {
+        template: 'deletion-scheduled',
+        deleteAt: new Date('2026-12-09T15:30:00.000Z'),
+      },
+      'deletion-cancelled': { template: 'deletion-cancelled', client: firefoxOnWindows },
+    };
+
+    /**
+     * Function secure
+     *
+     * @description
+     * Renders a security e-mail for Camille Martin, on 9 November 2026 at 14:10 in Paris, with a
+     * window of 30 minutes.
+     *
+     * @param {SecurityEmailDetails} details - What the template shows.
+     * @param {Partial<SecurityEmailMessage>} overrides - Fields of the message to change.
+     * @returns {RenderedEmail} The e-mail.
+     */
+    function secure(
+      details: SecurityEmailDetails,
+      overrides: Partial<SecurityEmailMessage> = {},
+    ): RenderedEmail {
+      return renderer.renderSecurityEmail({
+        recipientEmail: 'camille.martin@ateliernord.fr',
+        occurredAt: new Date('2026-11-09T13:10:00.000Z'),
+        validityMinutes: 30,
+        timeZone: 'Europe/Paris',
+        details,
+        ...overrides,
+      });
+    }
+
+    describe.each<SecurityEmailTemplate>([
+      'password-reset',
+      'password-changed',
+      'email-changed',
+      'new-device',
+      'deletion-scheduled',
+      'deletion-cancelled',
+    ])('%s', (template) => {
+      it('leaves no variable unrendered', () => {
+        const email: RenderedEmail = secure(DETAILS[template]);
+
+        for (const part of [email.subject, email.html, email.text]) {
+          expect(part).not.toMatch(/\{\{|\}\}/u);
+          expect(part).not.toContain('undefined');
+          expect(part).not.toContain('null');
+        }
+      });
+
+      it('keeps the subject within 60 characters and the preheader within 90', () => {
+        const email: RenderedEmail = secure(DETAILS[template]);
+
+        expect(email.subject.length).toBeLessThanOrEqual(60);
+        expect(preheaderOf(email.html).length).toBeGreaterThan(0);
+        expect(preheaderOf(email.html).length).toBeLessThanOrEqual(90);
+      });
+
+      it('shows the frame of the security e-mails, in French, with no unsubscription', () => {
+        const email: RenderedEmail = secure(DETAILS[template]);
+
+        expect(email.html).toMatch(/<html lang="fr"/u);
+        expect(visibleTextOf(email.html)).toContain('Cadenway Sécurité · toujours envoyé');
+        for (const part of [visibleTextOf(email.html), email.text]) {
+          expect(part).toContain(
+            'E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.',
+          );
+          expect(part).toContain('Cadenway · 12 rue de la Charité, 69002 Lyon');
+          expect(part).not.toContain('Gérer mes notifications');
+          expect(part).not.toContain('Lieu (approximatif)');
+        }
+      });
+    });
+
+    describe('Réinitialisation du mot de passe', () => {
+      const resetUrl: string = `${WEB_APP_URL}/reset#token=${TOKEN}`;
+
+      it('writes the subject of the mockup and a link valid 30 minutes, not "1 heure"', () => {
+        const email: RenderedEmail = secure(DETAILS['password-reset']);
+
+        expect(email.subject).toBe('Réinitialisez votre mot de passe Cadenway');
+        expect(preheaderOf(email.html)).toBe(
+          'Lien valable 30 minutes. Ignorez cet e-mail si la demande ne vient pas de vous.',
+        );
+        for (const part of [email.subject, visibleTextOf(email.html), email.text]) {
+          expect(part).not.toContain('1 heure');
+        }
+      });
+
+      it('writes the text part as the plain-text version of the mockup, with the IP address instead of a place', () => {
+        expect(secure(DETAILS['password-reset']).text).toBe(
+          [
+            'CHOISIR UN NOUVEAU MOT DE PASSE',
+            '',
+            'Une réinitialisation a été demandée pour camille.martin@ateliernord.fr. Choisissez un nouveau mot de passe avec le bouton ci-dessous.',
+            '',
+            `Choisir un nouveau mot de passe : ${resetUrl}`,
+            '',
+            'Appareil : Firefox sur Windows',
+            'Adresse IP : 192.0.2.14',
+            'Date : 9 novembre 2026 à 14:10 (heure de Paris)',
+            '',
+            'Le lien expire dans 30 minutes. Votre mot de passe actuel reste valable tant que vous n’en choisissez pas un nouveau.',
+            '',
+            '--',
+            'E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.',
+            'Cadenway · 12 rue de la Charité, 69002 Lyon',
+            '',
+          ].join('\n'),
+        );
+      });
+
+      it('puts the token in the fragment of the link of the button and of the copyable link only', () => {
+        const email: RenderedEmail = secure(DETAILS['password-reset']);
+        const visible: string = visibleTextOf(email.html);
+
+        // Handlebars escapes `=` in the HTML part; a browser reads `&#x3D;` back as `=`.
+        expect(email.html).toContain(`href="${WEB_APP_URL}/reset#token&#x3D;${TOKEN}"`);
+        expect(occurrences(email.html, TOKEN)).toBe(2);
+        expect(occurrences(email.text, TOKEN)).toBe(1);
+        expect(email.subject).not.toContain(TOKEN);
+        expect(preheaderOf(email.html)).not.toContain(TOKEN);
+        expect(email.html).toContain('<strong>camille.martin@ateliernord.fr</strong>');
+        expect(visible).toContain(
+          'Le bouton ne fonctionne pas ? Copiez ce lien dans votre navigateur :',
+        );
+        expect(visible).toContain(
+          'Appareil Firefox sur Windows Adresse IP 192.0.2.14 Date 9 novembre 2026 à 14:10 (heure de Paris)',
+        );
+      });
+    });
+
+    describe('Mot de passe modifié', () => {
+      it('says the reset closed the 3 other sessions, as the event counts them', () => {
+        const email: RenderedEmail = secure(DETAILS['password-changed']);
+
+        expect(email.subject).toBe('Votre mot de passe a été modifié');
+        expect(preheaderOf(email.html)).toBe(
+          'Si ce n’était pas vous, sécurisez votre compte maintenant.',
+        );
+        expect(email.html).toContain('<strong>vos 3 autres sessions ont été fermées</strong>');
+        expect(email.html).toContain(`href="${WEB_APP_URL}/forgot"`);
+        expect(email.text).toBe(
+          [
+            'MOT DE PASSE MODIFIÉ',
+            '',
+            'Le mot de passe de votre compte vient d’être modifié. Par sécurité, vos 3 autres sessions ont été fermées.',
+            '',
+            'Appareil : Firefox sur Windows',
+            'Adresse IP : 192.0.2.14',
+            'Date : 9 novembre 2026 à 14:10 (heure de Paris)',
+            '',
+            '---',
+            '',
+            'Ce n’était pas vous ? Réinitialisez votre mot de passe tout de suite, puis prévenez l’administrateur de votre organisation.',
+            '',
+            `Sécuriser mon compte : ${WEB_APP_URL}/forgot`,
+            '',
+            '--',
+            'E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.',
+            'Cadenway · 12 rue de la Charité, 69002 Lyon',
+            '',
+          ].join('\n'),
+        );
+      });
+
+      it.each<[string, SecurityEmailDetails, string]>([
+        [
+          'a reset that closed 5 sessions',
+          { ...passwordChangedFromSession, method: 'reset', closedSessionCount: 5 },
+          'Par sécurité, vos 5 autres sessions ont été fermées.',
+        ],
+        [
+          'a reset that closed 1 session',
+          { ...passwordChangedFromSession, method: 'reset', closedSessionCount: 1 },
+          'Par sécurité, votre autre session a été fermée.',
+        ],
+        [
+          'a reset that kept the other sessions',
+          { ...passwordChangedFromSession, method: 'reset', closedSessionCount: 0 },
+          'modifié. Vos autres sessions restent ouvertes.',
+        ],
+        [
+          'a change from a session',
+          passwordChangedFromSession,
+          'modifié. Vos autres sessions restent ouvertes.',
+        ],
+      ])('states what happened to the sessions after %s', (_case, details, sentence) => {
+        const email: RenderedEmail = secure(details);
+
+        expect(email.text).toContain(sentence);
+        expect(visibleTextOf(email.html)).not.toContain('vos 3 autres sessions');
+      });
+    });
+
+    describe('Adresse e-mail modifiée', () => {
+      it('tells the previous address which one replaced it, with no link to revert the change', () => {
+        const email: RenderedEmail = secure(DETAILS['email-changed']);
+
+        expect(email.subject).toBe('L’adresse e-mail de votre compte a été modifiée');
+        expect(preheaderOf(email.html)).toBe(
+          'Vos e-mails partent désormais vers une autre adresse. Ce n’était pas vous ? Agissez vite.',
+        );
+        expect(email.html).toContain('<strong>camille@ateliernord.fr</strong>');
+        expect(email.text).toBe(
+          [
+            'ADRESSE E-MAIL MODIFIÉE',
+            '',
+            'L’adresse e-mail de votre compte a été remplacée par camille@ateliernord.fr : elle est vérifiée et reçoit désormais vos e-mails. Cette adresse-ci n’en recevra plus.',
+            '',
+            'Appareil : Firefox sur Windows',
+            'Adresse IP : 192.0.2.14',
+            'Date : 9 novembre 2026 à 14:10 (heure de Paris)',
+            '',
+            '---',
+            '',
+            'Ce n’était pas vous ? Quelqu’un a peut-être accès à votre compte. Si vous êtes encore connecté, vérifiez vos sessions et changez votre mot de passe, puis prévenez l’administrateur de votre organisation.',
+            '',
+            `Vérifier mes sessions : ${WEB_APP_URL}/account/security`,
+            '',
+            '--',
+            'E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.',
+            'Cadenway · 12 rue de la Charité, 69002 Lyon',
+            '',
+          ].join('\n'),
+        );
+        expect([...email.html.matchAll(/href="([^"]+)"/gu)].map((match) => match[1])).toEqual([
+          `${WEB_APP_URL}/account/security`,
+        ]);
+      });
+    });
+
+    describe('Nouvelle connexion', () => {
+      it('names the browser in the subject and shows the IP address instead of a place', () => {
+        const email: RenderedEmail = secure(DETAILS['new-device'], {
+          occurredAt: new Date('2026-11-09T07:42:00.000Z'),
+        });
+
+        expect(email.subject).toBe('Nouvelle connexion depuis Safari sur iOS');
+        expect(preheaderOf(email.html)).toBe(
+          '86.247.12.30 · 9 novembre à 08:42. Vérifiez vos sessions si ce n’était pas vous.',
+        );
+        expect(email.html).toContain(`href="${WEB_APP_URL}/account/security"`);
+        expect(email.text).toBe(
+          [
+            'NOUVELLE CONNEXION DÉTECTÉE',
+            '',
+            'Votre compte vient d’être utilisé sur un appareil que nous ne connaissions pas.',
+            '',
+            'Appareil : Safari sur iOS 18.1',
+            'Adresse IP : 86.247.12.30',
+            'Date : 9 novembre 2026 à 08:42 (heure de Paris)',
+            '',
+            'Si c’était vous, vous n’avez rien à faire. Sinon, fermez cette session et changez votre mot de passe.',
+            '',
+            `Vérifier mes sessions : ${WEB_APP_URL}/account/security`,
+            '',
+            '--',
+            'E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.',
+            'Cadenway · 12 rue de la Charité, 69002 Lyon',
+            '',
+          ].join('\n'),
+        );
+      });
+
+      it.each<[string, Partial<SecurityEmailClient>]>([
+        ['the browser', { browser: null }],
+        ['the operating system', { os: null }],
+        ['both', { browser: null, os: null }],
+      ])('falls back on a subject without device when %s is unknown', (_part, unknown) => {
+        const email: RenderedEmail = secure({
+          template: 'new-device',
+          client: { ...firefoxOnWindows, ...unknown },
+        });
+
+        expect(email.subject).toBe('Nouvelle connexion à votre compte Cadenway');
+        expect(email.text).not.toContain('null');
+      });
+    });
+
+    describe('Suppression du compte', () => {
+      it('dates the deletion from deleteAt and counts its delay', () => {
+        const email: RenderedEmail = secure(DETAILS['deletion-scheduled'], {
+          occurredAt: new Date('2026-11-09T15:30:00.000Z'),
+        });
+
+        expect(email.subject).toBe('La suppression de votre compte est programmée');
+        expect(preheaderOf(email.html)).toBe(
+          'Votre compte sera supprimé le 9 décembre 2026. Vous pouvez encore annuler.',
+        );
+        expect(visibleTextOf(email.html)).toContain('Suppression programmée le 9 décembre');
+        expect(email.html).toContain('<strong>30 jours</strong>');
+        expect(email.html).toContain(`href="${WEB_APP_URL}/account"`);
+        expect(email.text).toBe(
+          [
+            'SUPPRESSION PROGRAMMÉE LE 9 DÉCEMBRE',
+            '',
+            'Comme demandé, votre compte et vos données personnelles seront supprimés définitivement dans 30 jours. Jusque-là, une connexion suffit pour annuler.',
+            '',
+            'Supprimé : Profil, préférences, jetons d’API, sessions',
+            'Conservé : Tâches et documents de l’organisation, attribués à « Ancien membre »',
+            '',
+            `Annuler la suppression : ${WEB_APP_URL}/account`,
+            '',
+            '--',
+            'E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.',
+            'Cadenway · 12 rue de la Charité, 69002 Lyon',
+            '',
+          ].join('\n'),
+        );
+      });
+
+      it('takes the day of the deletion in the time zone of the account, Paris when unknown', () => {
+        const late: SecurityEmailDetails = {
+          template: 'deletion-scheduled',
+          deleteAt: new Date('2026-12-09T23:30:00.000Z'),
+        };
+
+        expect(preheaderOf(secure(late, { timeZone: 'America/New_York' }).html)).toContain(
+          'le 9 décembre 2026.',
+        );
+        expect(preheaderOf(secure(late, { timeZone: 'Mars/Olympus' }).html)).toContain(
+          'le 10 décembre 2026.',
+        );
+      });
+    });
+
+    describe('Suppression annulée', () => {
+      it('tells that a sign-in cancelled the deletion, and what to do if it was not the person', () => {
+        const email: RenderedEmail = secure(DETAILS['deletion-cancelled'], {
+          occurredAt: new Date('2026-11-10T08:05:00.000Z'),
+        });
+
+        expect(email.subject).toBe('La suppression de votre compte est annulée');
+        expect(preheaderOf(email.html)).toBe(
+          'Une connexion vient d’annuler la suppression de votre compte, qui reste actif.',
+        );
+        expect(email.text).toBe(
+          [
+            'SUPPRESSION ANNULÉE',
+            '',
+            'Une connexion à votre compte vient d’annuler sa suppression programmée : votre compte reste actif, avec vos données.',
+            '',
+            'Appareil : Firefox sur Windows',
+            'Adresse IP : 192.0.2.14',
+            'Date : 10 novembre 2026 à 09:05 (heure de Paris)',
+            '',
+            'Vous souhaitez toujours supprimer votre compte ? Programmez de nouveau la suppression depuis votre profil.',
+            '',
+            '---',
+            '',
+            'Ce n’était pas vous ? Quelqu’un connaît peut-être votre mot de passe : changez-le depuis votre profil, puis vérifiez vos sessions.',
+            '',
+            `Vérifier mes sessions : ${WEB_APP_URL}/account/security`,
+            '',
+            '--',
+            'E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.',
+            'Cadenway · 12 rue de la Charité, 69002 Lyon',
+            '',
+          ].join('\n'),
+        );
+      });
+    });
+
+    it('dates the rows in the time zone of the account, and in Paris when the zone is unknown', () => {
+      const newYork: RenderedEmail = secure(DETAILS['deletion-cancelled'], {
+        timeZone: 'America/New_York',
+      });
+      const unknown: RenderedEmail = secure(DETAILS['deletion-cancelled'], {
+        timeZone: 'Mars/Olympus',
+      });
+
+      expect(newYork.text).toContain('Date : 9 novembre 2026 à 08:10 (UTC−5)');
+      expect(unknown.text).toContain('Date : 9 novembre 2026 à 14:10 (heure de Paris)');
+    });
+
+    it('escapes the device and the IP address in the HTML part only', () => {
+      const email: RenderedEmail = secure({
+        template: 'new-device',
+        client: {
+          deviceType: 'desktop',
+          browser: '<img src=x onerror=alert(1)>',
+          os: 'Linux & "Co"',
+          osVersion: null,
+          ipAddress: '<b>192.0.2.14</b>',
+        },
+      });
+
+      expect(email.html).not.toContain('<img src=x');
+      expect(email.html).not.toContain('<b>192.0.2.14</b>');
+      expect(email.html).toContain(
+        '&lt;img src&#x3D;x onerror&#x3D;alert(1)&gt; sur Linux &amp; &quot;Co&quot;',
+      );
+      expect(email.html).toContain('&lt;b&gt;192.0.2.14&lt;/b&gt;');
+      expect(email.subject).toBe(
+        'Nouvelle connexion depuis <img src=x onerror=alert(1)> sur Linux & "Co"',
+      );
+      expect(email.text).toContain('Adresse IP : <b>192.0.2.14</b>');
+    });
+
+    it('escapes the new address in the HTML part', () => {
+      const email: RenderedEmail = secure({
+        template: 'email-changed',
+        newEmail: '"<b>camille</b>"@ateliernord.fr',
+        client: firefoxOnWindows,
+      });
+
+      expect(email.html).not.toContain('<b>camille</b>');
+      expect(email.html).toContain('&quot;&lt;b&gt;camille&lt;/b&gt;&quot;@ateliernord.fr');
     });
   });
 
