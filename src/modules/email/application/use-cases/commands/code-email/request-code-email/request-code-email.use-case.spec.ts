@@ -105,14 +105,14 @@ describe('RequestCodeEmail', () => {
     ]);
   });
 
-  it('records an address-change code as skipped: its e-mail is not built yet', async () => {
+  it('queues an address-change code like the others', async () => {
     const result: RequestCodeEmailOutput = await useCase.execute(
       issuedCode({ purpose: 'email-change' }),
     );
 
-    expect(result).toMatchObject({ outcome: 'skipped', reason: 'purpose-not-supported' });
-    expect(queue.enqueued).toEqual([]);
-    expect(deliveries.contents.size).toBe(0);
+    expect(result).toMatchObject({ outcome: 'queued' });
+    expect(queue.enqueued).toHaveLength(1);
+    expect(deliveries.contents.size).toBe(1);
   });
 
   it('writes nothing for an event it already recorded', async () => {

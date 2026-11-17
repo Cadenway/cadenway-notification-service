@@ -98,7 +98,7 @@ describe('SendInvitationEmail', () => {
         subject: 'invitation subject',
         html: `<p>${line}</p>`,
         text: line,
-        oneClickUnsubscribe: true,
+        unsubscribe: true,
       },
     ]);
     expect(deliveries.deliveries.get(deliveryId)?.status).toBe('sent');

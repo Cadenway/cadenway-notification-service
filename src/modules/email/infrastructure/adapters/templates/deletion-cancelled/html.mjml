@@ -1,0 +1,49 @@
+<mjml lang="fr">
+  <mj-head>
+    <mj-include path="../partials/head.mjml" />
+    <mj-preview
+      >Une connexion vient d’annuler la suppression de votre compte, qui reste actif.</mj-preview
+    >
+  </mj-head>
+  <mj-body background-color="#f2f2f4" width="600px">
+    <mj-wrapper padding="32px 20px">
+      <mj-include path="../partials/security-header.mjml" />
+      <mj-section
+        background-color="#ffffff"
+        border="1px solid #e4e4e7"
+        border-radius="12px"
+        padding="32px"
+      >
+        <mj-column>
+          <mj-text font-size="20px" line-height="28px" font-weight="600" padding="0 0 20px 0">
+            Suppression annulée
+          </mj-text>
+          <mj-text padding="0 0 20px 0">
+            Une connexion à votre compte vient d’annuler sa suppression programmée : votre compte
+            reste actif, avec vos données.
+          </mj-text>
+          <mj-include path="../partials/client-rows.mjml" />
+          <mj-text padding="0 0 20px 0">
+            Vous souhaitez toujours supprimer votre compte ? Programmez de nouveau la suppression
+            depuis votre profil.
+          </mj-text>
+          <mj-divider border-width="1px" border-color="#e4e4e7" padding="0 0 20px 0" />
+          <mj-text padding="0 0 20px 0">
+            <strong>Ce n’était pas vous ?</strong> Quelqu’un connaît peut-être votre mot de passe :
+            changez-le depuis votre profil, puis vérifiez vos sessions.
+          </mj-text>
+          <mj-button
+            href="{{sessionsUrl}}"
+            align="left"
+            background-color="#ffffff"
+            color="#18181b"
+            border="1px solid #e4e4e7"
+          >
+            Vérifier mes sessions
+          </mj-button>
+        </mj-column>
+      </mj-section>
+      <mj-include path="../partials/security-footer.mjml" />
+    </mj-wrapper>
+  </mj-body>
+</mjml>

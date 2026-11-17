@@ -7,20 +7,21 @@ import type { CodeEmailDecision } from './code-email-decision.policy.js';
  * Function codeEmailTemplateFor
  *
  * @description
- * The template of a purpose: `email-verification` and `sign-in` have theirs; `email-change` has
- * none yet, its e-mail comes with address changes.
+ * The template of a purpose: each purpose of `one-time-code.issued.v1` has its own, named after
+ * it. `email-change` sends the code that confirms a new address, valid 15 minutes, to that new
+ * address (`POST /v1/me/email-change` of the public auth contract).
  *
  * @param {CodeEmailPurpose} purpose - Purpose of the code.
- * @returns {CodeEmailTemplate | null} The template, or `null` when the purpose is not sent yet.
+ * @returns {CodeEmailTemplate} The template.
  */
-export function codeEmailTemplateFor(purpose: CodeEmailPurpose): CodeEmailTemplate | null {
+export function codeEmailTemplateFor(purpose: CodeEmailPurpose): CodeEmailTemplate {
   switch (purpose) {
     case 'email-verification':
       return 'email-verification';
     case 'sign-in':
       return 'sign-in';
     case 'email-change':
-      return null;
+      return 'email-change';
   }
 }
 
@@ -30,8 +31,8 @@ export function codeEmailTemplateFor(purpose: CodeEmailPurpose): CodeEmailTempla
  * @description
  * Decides whether the e-mail of an issued code leaves. A security e-mail is always sent: no
  * preference, Do not disturb or digest applies (cw-notification-domain). It is skipped only when
- * no template exists for its purpose, or when its code already expired: the contract of
- * `one-time-code.issued.v1` says a consumer does not send a code whose `expiresAt` has passed.
+ * its code already expired: the contract of `one-time-code.issued.v1` says a consumer does not
+ * send a code whose `expiresAt` has passed.
  *
  * @param {CodeEmailPurpose} purpose - Purpose of the code.
  * @param {CodeValidity} validity - When the code was issued and stops working.
@@ -43,12 +44,8 @@ export function decideCodeEmail(
   validity: CodeValidity,
   now: Date,
 ): CodeEmailDecision {
-  const template: CodeEmailTemplate | null = codeEmailTemplateFor(purpose);
-  if (template === null) {
-    return { kind: 'skip', reason: 'purpose-not-supported' };
-  }
   if (validity.isExpiredAt(now)) {
     return { kind: 'skip', reason: 'expired' };
   }
-  return { kind: 'send', template };
+  return { kind: 'send', template: codeEmailTemplateFor(purpose) };
 }

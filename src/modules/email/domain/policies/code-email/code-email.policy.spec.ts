@@ -103,17 +103,17 @@ describe('decideCodeEmail', () => {
     });
   });
 
-  it('skips an address-change code: its e-mail comes with address changes', () => {
+  it('sends an address-change code with its own template', () => {
     expect(decideCodeEmail('email-change', validity, beforeExpiry)).toEqual({
-      kind: 'skip',
-      reason: 'purpose-not-supported',
+      kind: 'send',
+      template: 'email-change',
     });
   });
 
-  it.each<[CodeEmailPurpose, string | null]>([
+  it.each<[CodeEmailPurpose, string]>([
     ['email-verification', 'email-verification'],
     ['sign-in', 'sign-in'],
-    ['email-change', null],
+    ['email-change', 'email-change'],
   ])('gives %s the template %s', (purpose, template) => {
     expect(codeEmailTemplateFor(purpose)).toBe(template);
   });

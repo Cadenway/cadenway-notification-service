@@ -13,14 +13,16 @@
 # NATS runs with the authorization of the broker of cadenway-ops (docs/messaging.md and
 # compose/nats/nats-server.conf there): a connection without a user is refused, and the
 # `notification` user has the same permissions as there. It publishes the subjects of the entities
-# this service owns and the dead letters (`dlq.>`), reads EVENTS and EVENTS_RESTRICTED through
-# consumers and by sequence (`STREAM.MSG.GET`, for the dead-letter worker), receives the four
-# delivery advisories of those two streams, and subscribes to its own inbox prefix
-# `_INBOX.notification.>` and to `rebuild.notification.>`. When cadenway-ops changes those
-# permissions, change them here too. `admin` stands for the user of the `nats-streams` container of
-# cadenway-ops; `identity`, with the permissions of identity-service there, publishes the restricted
-# events the tests send to this service, and `organization`, with the permissions of
-# organization-service there, the invitations.
+# this service owns and the dead letters (`dlq.>`), reads EVENTS and EVENTS_RESTRICTED by sequence
+# (`STREAM.MSG.GET`, for the dead-letter worker) and through its own durable consumers only, each
+# granted by its exact name (`notification-service__<handler>`) with the four subjects the kit uses
+# on it (create with its filter, info, next, acknowledge), receives the four delivery advisories of
+# those two streams, and subscribes to its own inbox prefix `_INBOX.notification.>` and to
+# `rebuild.notification.>`. When cadenway-ops changes those permissions, change them here too; a new
+# handler needs its four subjects there before the release that adds it. `admin` stands for the user
+# of the `nats-streams` container of cadenway-ops; `identity` publishes the identity events the tests
+# send to this service, restricted or not, and `organization` the invitations, each with the publish
+# permissions of its service there and none of its consumers: here they only publish.
 #
 # The streams: `nats-streams` runs compose/nats/ensure-streams.sh of cadenway-ops, copied below, as
 # `admin`, the way the `nats-streams` container of cadenway-ops does. It creates EVENTS,
@@ -140,8 +142,10 @@ configs:
         users = [
           { user: admin, password: admin, permissions: { publish: ">", subscribe: ">" } }
 
-          # The publisher of the restricted events, as in cadenway-ops: it may publish under
-          # `restricted.>` and read the information of EVENTS_RESTRICTED, never consume it.
+          # The publisher of the identity events, as in cadenway-ops: it may publish its account,
+          # session and token events into EVENTS and the restricted ones under `restricted.>`, and
+          # read the information of both streams, never consume EVENTS_RESTRICTED. Its consumers of
+          # cadenway-ops are left out: nothing here consumes as identity-service.
           {
             user: identity
             password: identity
@@ -152,10 +156,7 @@ configs:
                   "rebuild.*.user", "rebuild.*.session", "rebuild.*.api-token",
                   "restricted.>",
                   "$$JS.API.INFO", "$$JS.API.STREAM.NAMES",
-                  "$$JS.API.STREAM.INFO.EVENTS", "$$JS.API.STREAM.INFO.EVENTS_RESTRICTED",
-                  "$$JS.API.CONSUMER.CREATE.EVENTS.>", "$$JS.API.CONSUMER.DURABLE.CREATE.EVENTS.*",
-                  "$$JS.API.CONSUMER.INFO.EVENTS.*", "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.*",
-                  "$$JS.ACK.EVENTS.>"
+                  "$$JS.API.STREAM.INFO.EVENTS", "$$JS.API.STREAM.INFO.EVENTS_RESTRICTED"
                 ]
               }
               subscribe: { allow: ["_INBOX.identity.>", "rebuild.identity.>"] }
@@ -163,7 +164,8 @@ configs:
           }
 
           # The publisher of the invitations, as in cadenway-ops: it may publish under
-          # `evt.invitation.>` and the other subjects of organization-service, into EVENTS.
+          # `evt.invitation.>` and the other subjects of organization-service, into EVENTS. Its
+          # consumers of cadenway-ops are left out: nothing here consumes as organization-service.
           {
             user: organization
             password: organization
@@ -173,10 +175,7 @@ configs:
                   "evt.organization.>", "evt.member.>", "evt.invitation.>", "evt.domain.>",
                   "rebuild.*.organization", "rebuild.*.member", "rebuild.*.invitation",
                   "rebuild.*.domain",
-                  "$$JS.API.INFO", "$$JS.API.STREAM.NAMES", "$$JS.API.STREAM.INFO.EVENTS",
-                  "$$JS.API.CONSUMER.CREATE.EVENTS.>", "$$JS.API.CONSUMER.DURABLE.CREATE.EVENTS.*",
-                  "$$JS.API.CONSUMER.INFO.EVENTS.*", "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.*",
-                  "$$JS.ACK.EVENTS.>"
+                  "$$JS.API.INFO", "$$JS.API.STREAM.NAMES", "$$JS.API.STREAM.INFO.EVENTS"
                 ]
               }
               subscribe: { allow: ["_INBOX.organization.>", "rebuild.organization.>"] }
@@ -185,7 +184,12 @@ configs:
 
           # The only reader of EVENTS_RESTRICTED, and for that reason the owner of the dead-letter
           # worker: the worker reads a failed message by its sequence and copies it under `dlq.>`, and a
-          # failed message may be a restricted one.
+          # failed message may be a restricted one. Its consumers are granted by their exact names
+          # and filters, as in cadenway-ops: no wildcard stands for a stream, a consumer or a filter;
+          # the last `>` of an acknowledgement covers only the delivery counters of the reply subject.
+          # `STREAM.MSG.GET` still lets it read any message of EVENTS and EVENTS_RESTRICTED by its
+          # sequence: the dead-letter worker needs it, so the consumer grants do not narrow what
+          # this user can read.
           {
             user: notification
             password: notification
@@ -199,14 +203,46 @@ configs:
                   "$$JS.API.STREAM.INFO.EVENTS", "$$JS.API.STREAM.INFO.EVENTS_RESTRICTED",
                   "$$JS.API.STREAM.INFO.EVENTS_DLQ",
                   "$$JS.API.STREAM.MSG.GET.EVENTS", "$$JS.API.STREAM.MSG.GET.EVENTS_RESTRICTED",
-                  "$$JS.API.CONSUMER.CREATE.EVENTS.>", "$$JS.API.CONSUMER.DURABLE.CREATE.EVENTS.*",
-                  "$$JS.API.CONSUMER.INFO.EVENTS.*", "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.*",
-                  "$$JS.ACK.EVENTS.>",
-                  "$$JS.API.CONSUMER.CREATE.EVENTS_RESTRICTED.>",
-                  "$$JS.API.CONSUMER.DURABLE.CREATE.EVENTS_RESTRICTED.*",
-                  "$$JS.API.CONSUMER.INFO.EVENTS_RESTRICTED.*",
-                  "$$JS.API.CONSUMER.MSG.NEXT.EVENTS_RESTRICTED.*",
-                  "$$JS.ACK.EVENTS_RESTRICTED.>"
+
+                  "$$JS.API.CONSUMER.CREATE.EVENTS.notification-service__request-invitation-email.evt.invitation.issued.v1",
+                  "$$JS.API.CONSUMER.INFO.EVENTS.notification-service__request-invitation-email",
+                  "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.notification-service__request-invitation-email",
+                  "$$JS.ACK.EVENTS.notification-service__request-invitation-email.>",
+
+                  "$$JS.API.CONSUMER.CREATE.EVENTS.notification-service__request-password-changed-email.evt.user.password-changed.v1",
+                  "$$JS.API.CONSUMER.INFO.EVENTS.notification-service__request-password-changed-email",
+                  "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.notification-service__request-password-changed-email",
+                  "$$JS.ACK.EVENTS.notification-service__request-password-changed-email.>",
+
+                  "$$JS.API.CONSUMER.CREATE.EVENTS.notification-service__request-email-changed-email.evt.user.email-changed.v1",
+                  "$$JS.API.CONSUMER.INFO.EVENTS.notification-service__request-email-changed-email",
+                  "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.notification-service__request-email-changed-email",
+                  "$$JS.ACK.EVENTS.notification-service__request-email-changed-email.>",
+
+                  "$$JS.API.CONSUMER.CREATE.EVENTS.notification-service__request-new-device-email.evt.session.opened-on-new-device.v1",
+                  "$$JS.API.CONSUMER.INFO.EVENTS.notification-service__request-new-device-email",
+                  "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.notification-service__request-new-device-email",
+                  "$$JS.ACK.EVENTS.notification-service__request-new-device-email.>",
+
+                  "$$JS.API.CONSUMER.CREATE.EVENTS.notification-service__request-deletion-scheduled-email.evt.user.deletion-scheduled.v1",
+                  "$$JS.API.CONSUMER.INFO.EVENTS.notification-service__request-deletion-scheduled-email",
+                  "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.notification-service__request-deletion-scheduled-email",
+                  "$$JS.ACK.EVENTS.notification-service__request-deletion-scheduled-email.>",
+
+                  "$$JS.API.CONSUMER.CREATE.EVENTS.notification-service__request-deletion-cancelled-email.evt.user.deletion-cancelled.v1",
+                  "$$JS.API.CONSUMER.INFO.EVENTS.notification-service__request-deletion-cancelled-email",
+                  "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.notification-service__request-deletion-cancelled-email",
+                  "$$JS.ACK.EVENTS.notification-service__request-deletion-cancelled-email.>",
+
+                  "$$JS.API.CONSUMER.CREATE.EVENTS_RESTRICTED.notification-service__request-code-email.restricted.one-time-code.issued.v1",
+                  "$$JS.API.CONSUMER.INFO.EVENTS_RESTRICTED.notification-service__request-code-email",
+                  "$$JS.API.CONSUMER.MSG.NEXT.EVENTS_RESTRICTED.notification-service__request-code-email",
+                  "$$JS.ACK.EVENTS_RESTRICTED.notification-service__request-code-email.>",
+
+                  "$$JS.API.CONSUMER.CREATE.EVENTS_RESTRICTED.notification-service__request-password-reset-email.restricted.password-reset-link.issued.v1",
+                  "$$JS.API.CONSUMER.INFO.EVENTS_RESTRICTED.notification-service__request-password-reset-email",
+                  "$$JS.API.CONSUMER.MSG.NEXT.EVENTS_RESTRICTED.notification-service__request-password-reset-email",
+                  "$$JS.ACK.EVENTS_RESTRICTED.notification-service__request-password-reset-email.>"
                 ]
               }
               subscribe: {

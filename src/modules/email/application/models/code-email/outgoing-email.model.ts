@@ -34,16 +34,17 @@ export interface OutgoingEmail extends RenderedEmail {
   readonly to: { readonly address: string; readonly name: string };
 
   /**
-   * Property oneClickUnsubscribe
+   * Property unsubscribe
    *
    * @description
-   * Whether the e-mail offers the one-click unsubscription of `List-Unsubscribe-Post`. Every
-   * e-mail carries `List-Unsubscribe`; a security e-mail, always sent, never offers the one-click
-   * form (cw-email-templates).
+   * Whether the e-mail carries `List-Unsubscribe`, to Compte › Notifications, with its one-click
+   * form `List-Unsubscribe-Post` (RFC 8058). A security e-mail, always sent and impossible to turn
+   * off ("Sécurité · toujours envoyé" of the Emails artboard), carries neither
+   * (cw-email-templates).
    *
    * @type {boolean}
    * @readonly
    */
-  readonly oneClickUnsubscribe: boolean;
+  readonly unsubscribe: boolean;
   // #endregion
 }

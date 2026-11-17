@@ -4,8 +4,12 @@ import type { EmailRenderer } from '../../../application/ports/outbound/template
 import type { RenderedEmail } from '../../../application/models/code-email/rendered-email.model.js';
 import type { InvitationEmailMessage } from '../../../application/models/invitation-email/invitation-email-message.model.js';
 import type { InvitationEmailRenderer } from '../../../application/ports/outbound/templates/invitation-email/invitation-email-renderer.port.js';
+import type { SecurityEmailMessage } from '../../../application/models/security-email/security-email-message.model.js';
+import type { SecurityEmailRenderer } from '../../../application/ports/outbound/templates/security-email/security-email-renderer.port.js';
 import type { CodeEmailTemplate } from '../../../domain/value-objects/code-email/code-email-template.value-object.js';
+import type { SecurityEmailTemplate } from '../../../domain/value-objects/security-email/security-email-template.value-object.js';
 import { invitationEmailContext } from './invitation-email-wording.js';
+import { securityEmailContext } from './security-email-wording.js';
 
 /**
  * Type CompiledTemplate
@@ -98,11 +102,11 @@ interface CompiledEmail {
  * Type TemplateName
  *
  * @description
- * The name of a template folder: the two code e-mails and the invitation e-mail.
+ * The name of a template folder: the code e-mails, the invitation e-mail and the security e-mails.
  *
- * @type {CodeEmailTemplate | 'invitation'}
+ * @type {CodeEmailTemplate | 'invitation' | SecurityEmailTemplate}
  */
-type TemplateName = CodeEmailTemplate | 'invitation';
+type TemplateName = CodeEmailTemplate | 'invitation' | SecurityEmailTemplate;
 
 /**
  * Constant TEMPLATES
@@ -112,7 +116,18 @@ type TemplateName = CodeEmailTemplate | 'invitation';
  *
  * @type {readonly TemplateName[]}
  */
-const TEMPLATES: readonly TemplateName[] = ['email-verification', 'sign-in', 'invitation'];
+const TEMPLATES: readonly TemplateName[] = [
+  'email-verification',
+  'sign-in',
+  'email-change',
+  'invitation',
+  'password-reset',
+  'password-changed',
+  'email-changed',
+  'new-device',
+  'deletion-scheduled',
+  'deletion-cancelled',
+];
 
 /**
  * Constant PARTS
@@ -160,10 +175,13 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
  * subject and the text part are plain text.
  *
  * The French copy is the one of the Emails artboard of the mockup, adapted to a 6-digit code for
- * the code e-mails. Every recipient gets it, whatever the `language` of the event: the mockup has
- * no other language yet.
+ * the code e-mails; the e-mails the artboard lacks (the address-change code, the notice to the
+ * previous address, the cancelled deletion) are new copy in its style. Every recipient gets it,
+ * whatever the `language` of the event: the mockup has no other language yet.
  */
-export class HandlebarsEmailRenderer implements EmailRenderer, InvitationEmailRenderer {
+export class HandlebarsEmailRenderer
+  implements EmailRenderer, InvitationEmailRenderer, SecurityEmailRenderer
+{
   // #region Properties
   /**
    * Property templates
@@ -284,6 +302,24 @@ export class HandlebarsEmailRenderer implements EmailRenderer, InvitationEmailRe
    */
   public renderInvitationEmail(message: InvitationEmailMessage): RenderedEmail {
     return this.render('invitation', { ...invitationEmailContext(message, this.webAppUrl) });
+  }
+
+  /**
+   * Method renderSecurityEmail
+   *
+   * @description
+   * Renders a security e-mail of the "Compte et sécurité" group: the template of its details, the
+   * rows "Appareil", "Adresse IP" and "Date" in the time zone of the account (Paris when unknown),
+   * the reset link with its token in the fragment. The values are escaped in the HTML part.
+   *
+   * @param {SecurityEmailMessage} message - What the e-mail says.
+   * @returns {RenderedEmail} The subject and the two parts.
+   * @throws {Error} When the template is not loaded or a value is missing.
+   */
+  public renderSecurityEmail(message: SecurityEmailMessage): RenderedEmail {
+    return this.render(message.details.template, {
+      ...securityEmailContext(message, this.webAppUrl),
+    });
   }
 
   /**

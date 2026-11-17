@@ -174,7 +174,7 @@ describe('InvitationIssuedHandler', () => {
     expect(sender.sent[0]).toMatchObject({
       to: { address: 'marc.roux@ateliernord.fr', name: '' },
       subject: 'Hugo Durand vous invite à rejoindre Atelier Nord',
-      oneClickUnsubscribe: true,
+      unsubscribe: true,
     });
     expect(sender.sent[0]?.text).toContain(
       `Rejoindre Atelier Nord : http://app.cadenway.localhost/invite/${invitationId}\n`,

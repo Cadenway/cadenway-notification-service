@@ -88,7 +88,7 @@ describe('SendCodeEmail', () => {
         subject: 'email-verification subject',
         html: '<p>Camille Martin 482 913 10</p>',
         text: 'Camille Martin 482 913 10',
-        oneClickUnsubscribe: false,
+        unsubscribe: false,
       },
     ]);
     expect(deliveries.deliveries.get(deliveryId)?.status).toBe('sent');

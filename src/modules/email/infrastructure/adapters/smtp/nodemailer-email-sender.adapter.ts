@@ -184,9 +184,9 @@ export class EmailNotSentError extends Error {
  *
  * - Port 465 opens in TLS; another port upgrades with STARTTLS when offered, and requires it as
  *   soon as an account is set, so a password never crosses in clear.
- * - Every e-mail carries `List-Unsubscribe`, to Compte › Notifications of the web application, and
- *   `List-Unsubscribe-Post` only when it offers the one-click form; a security e-mail does not
- *   (cw-email-templates).
+ * - An e-mail that can be turned off carries `List-Unsubscribe`, to Compte › Notifications of the
+ *   web application, and its one-click form `List-Unsubscribe-Post`; a security e-mail, always
+ *   sent, carries neither (cw-email-templates).
  * - The `Message-ID` is derived from the id of the delivery, so two attempts of the same delivery
  *   send the same `Message-ID`.
  * - nodemailer logs nothing, and an error leaves with its codes only (`EmailNotSentError`): neither
@@ -292,12 +292,12 @@ export class NodemailerEmailSender implements EmailSender, OnApplicationShutdown
         text: email.text,
         html: email.html,
         messageId: `<${email.id}@${this.messageIdDomain}>`,
-        headers: {
-          'List-Unsubscribe': `<${this.unsubscribeUrl}>`,
-          ...(email.oneClickUnsubscribe
-            ? { 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' }
-            : {}),
-        },
+        headers: email.unsubscribe
+          ? {
+              'List-Unsubscribe': `<${this.unsubscribeUrl}>`,
+              'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+            }
+          : {},
         // The content is built by the templates only: nothing may make nodemailer read a file or
         // fetch a URL.
         disableFileAccess: true,
