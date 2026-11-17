@@ -3,6 +3,6 @@ name: cw-event
 description: Publish or consume an event through the outbox.
 ---
 
-Use the **cw-notification-event-builder** specialist for this task when delegation is available and authorized; otherwise read `.codex/agents/cw-notification-event-builder.toml` and follow its instructions directly: the user-provided arguments
-
-The agent carries its own procedure and rules; do not restate them.
+Delegate the user's arguments to **cw-notification-event-builder** if delegation is available and authorized.
+Otherwise read and follow `.codex/agents/cw-notification-event-builder.toml` directly with those arguments.
+Do not restate its rules or procedure.
