@@ -67,13 +67,15 @@ const serviceTables = [
   'code_email_deliveries',
   'event_versions',
   'idempotency_keys',
+  'invitation_email_deliveries',
   'outbox_events',
   'pending_code_emails',
+  'pending_invitation_emails',
   'processed_events',
 ] as const;
 
 /** The migrations of the service, all applied by the migrator. */
-const migrationCount = 2;
+const migrationCount = 3;
 
 /**
  * Runs `docker compose` on the throwaway project.
@@ -438,8 +440,10 @@ describe('notification-service wiring', () => {
       { relname: 'code_email_deliveries', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'event_versions', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'idempotency_keys', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'invitation_email_deliveries', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'outbox_events', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'pending_code_emails', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'pending_invitation_emails', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'processed_events', relrowsecurity: false, relforcerowsecurity: false },
     ]);
     expect(policies.rows).toEqual([
@@ -449,8 +453,16 @@ describe('notification-service wiring', () => {
       },
       { tablename: 'event_versions', policyname: 'event_versions_organization_isolation' },
       { tablename: 'idempotency_keys', policyname: 'idempotency_keys_organization_isolation' },
+      {
+        tablename: 'invitation_email_deliveries',
+        policyname: 'invitation_email_deliveries_organization_isolation',
+      },
       { tablename: 'outbox_events', policyname: 'outbox_events_organization_isolation' },
       { tablename: 'pending_code_emails', policyname: 'pending_code_emails_system_access' },
+      {
+        tablename: 'pending_invitation_emails',
+        policyname: 'pending_invitation_emails_organization_isolation',
+      },
     ]);
   });
 

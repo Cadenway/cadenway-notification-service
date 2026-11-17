@@ -19,7 +19,8 @@
 # `_INBOX.notification.>` and to `rebuild.notification.>`. When cadenway-ops changes those
 # permissions, change them here too. `admin` stands for the user of the `nats-streams` container of
 # cadenway-ops; `identity`, with the permissions of identity-service there, publishes the restricted
-# events the tests send to this service.
+# events the tests send to this service, and `organization`, with the permissions of
+# organization-service there, the invitations.
 #
 # The streams: `nats-streams` runs compose/nats/ensure-streams.sh of cadenway-ops, copied below, as
 # `admin`, the way the `nats-streams` container of cadenway-ops does. It creates EVENTS,
@@ -158,6 +159,27 @@ configs:
                 ]
               }
               subscribe: { allow: ["_INBOX.identity.>", "rebuild.identity.>"] }
+            }
+          }
+
+          # The publisher of the invitations, as in cadenway-ops: it may publish under
+          # `evt.invitation.>` and the other subjects of organization-service, into EVENTS.
+          {
+            user: organization
+            password: organization
+            permissions: {
+              publish: {
+                allow: [
+                  "evt.organization.>", "evt.member.>", "evt.invitation.>", "evt.domain.>",
+                  "rebuild.*.organization", "rebuild.*.member", "rebuild.*.invitation",
+                  "rebuild.*.domain",
+                  "$$JS.API.INFO", "$$JS.API.STREAM.NAMES", "$$JS.API.STREAM.INFO.EVENTS",
+                  "$$JS.API.CONSUMER.CREATE.EVENTS.>", "$$JS.API.CONSUMER.DURABLE.CREATE.EVENTS.*",
+                  "$$JS.API.CONSUMER.INFO.EVENTS.*", "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.*",
+                  "$$JS.ACK.EVENTS.>"
+                ]
+              }
+              subscribe: { allow: ["_INBOX.organization.>", "rebuild.organization.>"] }
             }
           }
 

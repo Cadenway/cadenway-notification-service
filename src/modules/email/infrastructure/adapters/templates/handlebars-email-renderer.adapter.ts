@@ -2,7 +2,10 @@ import { createRequire } from 'node:module';
 import type { CodeEmailMessage } from '../../../application/models/code-email/code-email-message.model.js';
 import type { EmailRenderer } from '../../../application/ports/outbound/templates/code-email/email-renderer.port.js';
 import type { RenderedEmail } from '../../../application/models/code-email/rendered-email.model.js';
+import type { InvitationEmailMessage } from '../../../application/models/invitation-email/invitation-email-message.model.js';
+import type { InvitationEmailRenderer } from '../../../application/ports/outbound/templates/invitation-email/invitation-email-renderer.port.js';
 import type { CodeEmailTemplate } from '../../../domain/value-objects/code-email/code-email-template.value-object.js';
+import { invitationEmailContext } from './invitation-email-wording.js';
 
 /**
  * Type CompiledTemplate
@@ -92,14 +95,24 @@ interface CompiledEmail {
 }
 
 /**
+ * Type TemplateName
+ *
+ * @description
+ * The name of a template folder: the two code e-mails and the invitation e-mail.
+ *
+ * @type {CodeEmailTemplate | 'invitation'}
+ */
+type TemplateName = CodeEmailTemplate | 'invitation';
+
+/**
  * Constant TEMPLATES
  *
  * @description
  * The templates the service needs; the start-up fails when the generated module lacks one.
  *
- * @type {readonly CodeEmailTemplate[]}
+ * @type {readonly TemplateName[]}
  */
-const TEMPLATES: readonly CodeEmailTemplate[] = ['email-verification', 'sign-in'];
+const TEMPLATES: readonly TemplateName[] = ['email-verification', 'sign-in', 'invitation'];
 
 /**
  * Constant PARTS
@@ -146,10 +159,11 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
  * the e-mail. The HTML part escapes the values it receives, such as the name of the recipient; the
  * subject and the text part are plain text.
  *
- * The French copy is the one of the Emails artboard of the mockup, adapted to a 6-digit code.
- * Every account gets it, whatever its `language`: the mockup has no other language yet.
+ * The French copy is the one of the Emails artboard of the mockup, adapted to a 6-digit code for
+ * the code e-mails. Every recipient gets it, whatever the `language` of the event: the mockup has
+ * no other language yet.
  */
-export class HandlebarsEmailRenderer implements EmailRenderer {
+export class HandlebarsEmailRenderer implements EmailRenderer, InvitationEmailRenderer {
   // #region Properties
   /**
    * Property templates
@@ -157,10 +171,10 @@ export class HandlebarsEmailRenderer implements EmailRenderer {
    * @description
    * The compiled templates, by name.
    *
-   * @type {ReadonlyMap<CodeEmailTemplate, CompiledEmail>}
+   * @type {ReadonlyMap<TemplateName, CompiledEmail>}
    * @readonly
    */
-  private readonly templates: ReadonlyMap<CodeEmailTemplate, CompiledEmail>;
+  private readonly templates: ReadonlyMap<TemplateName, CompiledEmail>;
 
   /**
    * Property webAppUrl
@@ -181,11 +195,11 @@ export class HandlebarsEmailRenderer implements EmailRenderer {
    * @description
    * Keeps templates already loaded by `load`.
    *
-   * @param {ReadonlyMap<CodeEmailTemplate, CompiledEmail>} templates - The compiled templates.
+   * @param {ReadonlyMap<TemplateName, CompiledEmail>} templates - The compiled templates.
    * @param {string} webAppUrl - Origin of the web application, without a trailing slash.
    * @constructor
    */
-  private constructor(templates: ReadonlyMap<CodeEmailTemplate, CompiledEmail>, webAppUrl: string) {
+  private constructor(templates: ReadonlyMap<TemplateName, CompiledEmail>, webAppUrl: string) {
     this.templates = templates;
     this.webAppUrl = webAppUrl;
   }
@@ -221,10 +235,7 @@ export class HandlebarsEmailRenderer implements EmailRenderer {
       );
     }
     const specifications: unknown = isRecord(loaded) ? loaded.emailTemplates : undefined;
-    const templates: Map<CodeEmailTemplate, CompiledEmail> = new Map<
-      CodeEmailTemplate,
-      CompiledEmail
-    >();
+    const templates: Map<TemplateName, CompiledEmail> = new Map<TemplateName, CompiledEmail>();
     for (const name of TEMPLATES) {
       const parts: unknown = isRecord(specifications) ? specifications[name] : undefined;
       if (!isRecord(parts) || PARTS.some((part) => !isRecord(parts[part]))) {
@@ -251,16 +262,46 @@ export class HandlebarsEmailRenderer implements EmailRenderer {
    * @throws {Error} When the template is not loaded or a value is missing.
    */
   public renderCodeEmail(message: CodeEmailMessage): RenderedEmail {
-    const template: CompiledEmail | undefined = this.templates.get(message.template);
-    if (template === undefined) {
-      throw new Error(`The e-mail template "${message.template}" is not loaded.`);
-    }
-    const context: Readonly<Record<string, unknown>> = {
+    return this.render(message.template, {
       recipientName: message.recipientName,
       code: message.code.display(),
       validityMinutes: message.validityMinutes,
       webAppUrl: this.webAppUrl,
-    };
+    });
+  }
+
+  /**
+   * Method renderInvitationEmail
+   *
+   * @description
+   * Renders the "Invitation" e-mail of the mockup: the inviter and the organization in the
+   * subject, the proposed role and the expiry date in the preheader, the button to
+   * `<web application>/invite/<invitationId>`. The names are escaped in the HTML part.
+   *
+   * @param {InvitationEmailMessage} message - What the e-mail says.
+   * @returns {RenderedEmail} The subject and the two parts.
+   * @throws {Error} When the template is not loaded or a value is missing.
+   */
+  public renderInvitationEmail(message: InvitationEmailMessage): RenderedEmail {
+    return this.render('invitation', { ...invitationEmailContext(message, this.webAppUrl) });
+  }
+
+  /**
+   * Method render
+   *
+   * @description
+   * Renders the three parts of a loaded template with one context.
+   *
+   * @param {TemplateName} name - The template.
+   * @param {Readonly<Record<string, unknown>>} context - Its values.
+   * @returns {RenderedEmail} The subject and the two parts.
+   * @throws {Error} When the template is not loaded or a value is missing.
+   */
+  private render(name: TemplateName, context: Readonly<Record<string, unknown>>): RenderedEmail {
+    const template: CompiledEmail | undefined = this.templates.get(name);
+    if (template === undefined) {
+      throw new Error(`The e-mail template "${name}" is not loaded.`);
+    }
     return {
       subject: template.subject(context),
       html: template.html(context),

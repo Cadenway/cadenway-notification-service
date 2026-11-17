@@ -64,7 +64,8 @@ import { PlatformModule } from './modules/platform/platform.module.js';
  *   `src/config/job-queues.ts` as the migrator role; the start-up fails while they are missing.
  *   Running jobs get 30 seconds to finish at shutdown.
  * - `PlatformModule`: the owner of the kit tables in the migrations of the service.
- * - `EmailModule`: the e-mails that carry a single-use code (`src/modules/email/MODULE.md`).
+ * - `EmailModule`: the e-mails that carry a single-use code and the invitation e-mail
+ *   (`src/modules/email/MODULE.md`).
  *
  * Business modules under `src/modules/` are registered here as they are created.
  */

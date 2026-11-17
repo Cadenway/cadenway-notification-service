@@ -15,6 +15,13 @@
       "when": 1794768146152,
       "tag": "0001_code_email_deliveries",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794905660785,
+      "tag": "0002_invitation_email_deliveries",
+      "breakpoints": true
     }
   ]
 }
