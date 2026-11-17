@@ -187,6 +187,9 @@ configs:
           # failed message may be a restricted one. Its consumers are granted by their exact names
           # and filters, as in cadenway-ops: no wildcard stands for a stream, a consumer or a filter;
           # the last `>` of an acknowledgement covers only the delivery counters of the reply subject.
+          # `STREAM.MSG.GET` still lets it read any message of EVENTS and EVENTS_RESTRICTED by its
+          # sequence: the dead-letter worker needs it, so the consumer grants do not narrow what
+          # this user can read.
           {
             user: notification
             password: notification

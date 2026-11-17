@@ -135,6 +135,13 @@ sends it again; the event is not replayed.
   browser, the operating system and the IP address of a security e-mail are kept without controls,
   format characters or line breaks (`greetingName`), and escaped in the HTML part. An e-mail greets
   without a name when nothing is left; an invitation goes to the address alone.
+- A security e-mail repeats the device and the IP address only when they look like what they claim
+  to be (`client-text.policy`): a product name of letters, digits and a few signs, no domain and
+  four digits at most; a numeric version; an IPv4 or IPv6 address. Anything else reads as unknown
+  ("Navigateur inconnu", "Adresse inconnue"): the reset e-mail can be asked for any address without
+  signing in, from a browser that writes its own `User-Agent`, and a genuine e-mail of Cadenway
+  must not carry a text an attacker chose, such as a phone number or a domain. An unknown device
+  type reads as `unknown`, as the contract asks.
 - A code e-mail of purpose `email-change` goes to the new address the event names. The send log
   may still hold `purpose-not-supported` on such codes recorded before this version: no version
   reads it back.

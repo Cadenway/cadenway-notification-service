@@ -40,15 +40,27 @@ const DAY_MS: number = 86_400_000;
  *
  * @description
  * The device types of the contract, as a row names a device alone ("Mobile") and as it follows a
- * browser ("Firefox sur un mobile"). Any other type, `unknown` included, has no label.
+ * browser ("Firefox sur un mobile"). Any other type, `unknown` included, has no label. A map, so
+ * that no key of `Object.prototype` reads as a type.
  *
- * @type {Readonly<Record<string, { readonly alone: string; readonly after: string }>>}
+ * @type {ReadonlyMap<string, { readonly alone: string; readonly after: string }>}
  */
-const DEVICE_TYPES: Readonly<Record<string, { readonly alone: string; readonly after: string }>> = {
-  desktop: { alone: 'Ordinateur', after: 'un ordinateur' },
-  mobile: { alone: 'Mobile', after: 'un mobile' },
-  tablet: { alone: 'Tablette', after: 'une tablette' },
-};
+const DEVICE_TYPES: ReadonlyMap<string, { readonly alone: string; readonly after: string }> =
+  new Map<string, { readonly alone: string; readonly after: string }>([
+    ['desktop', { alone: 'Ordinateur', after: 'un ordinateur' }],
+    ['mobile', { alone: 'Mobile', after: 'un mobile' }],
+    ['tablet', { alone: 'Tablette', after: 'une tablette' }],
+  ]);
+
+/**
+ * Constant UNKNOWN_IP_ADDRESS
+ *
+ * @description
+ * What the row "Adresse IP" says when the event holds no showable address.
+ *
+ * @type {string}
+ */
+const UNKNOWN_IP_ADDRESS: string = 'Adresse inconnue';
 
 /**
  * Interface ZonedParts
@@ -272,8 +284,9 @@ function operatingSystemOf(os: string, version: string | null): string {
  * @returns {string} The device.
  */
 export function deviceLabel(client: SecurityEmailClient): string {
-  const type: { readonly alone: string; readonly after: string } | undefined =
-    DEVICE_TYPES[client.deviceType];
+  const type: { readonly alone: string; readonly after: string } | undefined = DEVICE_TYPES.get(
+    client.deviceType,
+  );
   if (client.browser !== null && client.os !== null) {
     return `${client.browser} sur ${operatingSystemOf(client.os, client.osVersion)}`;
   }
@@ -346,7 +359,7 @@ function clientValues(
 ): SecurityEmailContext {
   return {
     deviceLabel: deviceLabel(client),
-    ipAddress: client.ipAddress,
+    ipAddress: client.ipAddress ?? UNKNOWN_IP_ADDRESS,
     dateLabel: dateTimeLabel(occurredAt, timeZone),
   };
 }

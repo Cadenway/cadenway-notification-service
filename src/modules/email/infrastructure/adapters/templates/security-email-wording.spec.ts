@@ -109,6 +109,8 @@ describe('deviceLabel', () => {
     [{ browser: null, os: null, deviceType: 'mobile' }, 'Mobile'],
     [{ browser: null, os: null, deviceType: 'unknown' }, 'Appareil inconnu'],
     [{ browser: null, os: null, deviceType: 'watch' }, 'Appareil inconnu'],
+    [{ browser: null, os: null, deviceType: 'constructor' }, 'Appareil inconnu'],
+    [{ os: null, deviceType: 'toString' }, 'Firefox'],
   ])('says what is known when a part is unreadable: %j gives "%s"', (overrides, label) => {
     expect(deviceLabel({ ...firefoxOnWindows, ...overrides })).toBe(label);
   });

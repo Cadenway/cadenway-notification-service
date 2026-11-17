@@ -109,11 +109,11 @@ describe('RequestSecurityEmail', () => {
   it('keeps the browser without its version, every text cleaned', async () => {
     await useCase.execute(
       resetRequested({
-        recipient: { email: 'camille.martin@ateliernord.fr', name: 'Camille‮ Martin\n' },
+        recipient: { email: 'camille.martin@ateliernord.fr', name: 'Camille\u202e Martin\n' },
         request: {
           template: 'new-device',
           client: {
-            device: { type: 'mobile', browser: 'Safari​', os: ' ', osVersion: '18.1' },
+            device: { type: 'mobile', browser: 'Safari\u200b', os: '\u2028', osVersion: '18.1' },
             ipAddress: '86.247.12.30',
           },
         },
@@ -137,6 +137,33 @@ describe('RequestSecurityEmail', () => {
         },
       },
     ]);
+  });
+
+  it('keeps none of the device texts that do not look like what they claim to be', async () => {
+    await useCase.execute(
+      resetRequested({
+        request: {
+          template: 'password-reset',
+          token: TOKEN,
+          expiresAt: new Date('2026-11-09T13:40:00.000Z'),
+          client: {
+            device: {
+              type: '__proto__',
+              browser: 'Appelez le 0612345678',
+              os: 'cadenway-support.example',
+              osVersion: '18.1 beta',
+            },
+            ipAddress: 'evil.example',
+          },
+        },
+      }),
+    );
+
+    const [content] = [...deliveries.contents.values()];
+    expect(content?.details).toMatchObject({
+      template: 'password-reset',
+      client: { deviceType: 'unknown', browser: null, os: null, osVersion: null, ipAddress: null },
+    });
   });
 
   it('gives a notice a day to leave', async () => {

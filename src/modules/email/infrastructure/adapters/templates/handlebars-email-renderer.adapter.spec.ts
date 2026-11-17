@@ -778,6 +778,18 @@ describe('HandlebarsEmailRenderer', () => {
       expect(email.html).not.toContain('<b>camille</b>');
       expect(email.html).toContain('&quot;&lt;b&gt;camille&lt;/b&gt;&quot;@ateliernord.fr');
     });
+
+    it('says the address is unknown when the event held no showable one', () => {
+      const email: RenderedEmail = secure(
+        { template: 'new-device', client: { ...firefoxOnWindows, ipAddress: null } },
+        { occurredAt: new Date('2026-11-09T07:42:00.000Z') },
+      );
+
+      expect(email.text).toContain('Adresse IP : Adresse inconnue');
+      expect(preheaderOf(email.html)).toBe(
+        'Adresse inconnue · 9 novembre à 08:42. Vérifiez vos sessions si ce n’était pas vous.',
+      );
+    });
   });
 
   describe('Invitation', () => {

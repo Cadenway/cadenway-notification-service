@@ -67,7 +67,7 @@ const clientRecord = z.object({
   browser: z.string().nullable(),
   os: z.string().nullable(),
   osVersion: z.string().nullable(),
-  ipAddress: z.string(),
+  ipAddress: z.string().nullable(),
 });
 
 /**

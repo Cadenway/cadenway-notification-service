@@ -1,5 +1,11 @@
 import { greetingName } from '../../../../../domain/policies/code-email/recipient-name.policy.js';
 import {
+  knownDeviceType,
+  shownDeviceName,
+  shownIpAddress,
+  shownVersion,
+} from '../../../../../domain/policies/security-email/client-text.policy.js';
+import {
   decideSecurityEmail,
   noticeWindow,
 } from '../../../../../domain/policies/security-email/security-email.policy.js';
@@ -19,18 +25,17 @@ import type { RequestSecurityEmailInput } from './request-security-email.input.j
 import type { RequestSecurityEmailOutput } from './request-security-email.output.js';
 
 /**
- * Function shownOrNull
+ * Function cleaned
  *
  * @description
- * A name of the device as an e-mail may show it: cleaned by `greetingName`, `null` when nothing is
- * left. identity-service reads these names from a `User-Agent`, which the browser writes.
+ * A text of the device without controls, format characters or line breaks (`greetingName`),
+ * `null` when the event has none.
  *
- * @param {string | null} value - The name the event gives.
- * @returns {string | null} The cleaned name, or `null`.
+ * @param {string | null} value - The text the event gives.
+ * @returns {string | null} The cleaned text, or `null`.
  */
-function shownOrNull(value: string | null): string | null {
-  const shown: string = value === null ? '' : greetingName(value);
-  return shown === '' ? null : shown;
+function cleaned(value: string | null): string | null {
+  return value === null ? null : greetingName(value);
 }
 
 /**
@@ -38,18 +43,20 @@ function shownOrNull(value: string | null): string | null {
  *
  * @description
  * The browser of an event as the e-mail shows it: every text cleaned so that it neither breaks the
- * layout of the e-mail nor reorders its text, the version of the browser left out.
+ * layout of the e-mail nor reorders its text, then kept only when it looks like a product name, a
+ * version or an IP address (`client-text.policy`); an unknown device type reads as `unknown`; the
+ * version of the browser is left out.
  *
  * @param {SecurityEmailRequestClient} client - The browser as the event gives it.
  * @returns {SecurityEmailClient} The browser to show.
  */
 function cleanClient(client: SecurityEmailRequestClient): SecurityEmailClient {
   return {
-    deviceType: greetingName(client.device.type),
-    browser: shownOrNull(client.device.browser),
-    os: shownOrNull(client.device.os),
-    osVersion: shownOrNull(client.device.osVersion),
-    ipAddress: greetingName(client.ipAddress),
+    deviceType: knownDeviceType(client.device.type),
+    browser: shownDeviceName(cleaned(client.device.browser)),
+    os: shownDeviceName(cleaned(client.device.os)),
+    osVersion: shownVersion(cleaned(client.device.osVersion)),
+    ipAddress: shownIpAddress(greetingName(client.ipAddress)),
   };
 }
 
