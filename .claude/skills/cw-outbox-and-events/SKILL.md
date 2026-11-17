@@ -10,10 +10,12 @@ The wiring is in place (`src/app.module.ts`): `MessagingModule` connects as the 
 module (`src/modules/platform`) brings their tables into the migrations. The README of
 `@cadenway/nest-messaging` is the reference for every call below. No event of this service exists in
 `@cadenway/contracts` yet: an event is published or consumed only once its AsyncAPI spec is released
-(`cw-contract-first`). The service consumes one event so far, the restricted
-`one-time-code.issued.v1` of identity-service (`src/modules/email`), listed in `restrictedEvents`
-through `RESTRICTED_EVENT_NAMES` of `@cadenway/contracts/events/identity-service`: its consumer reads
-`EVENTS_RESTRICTED`, and its payload, a single-use code, is never logged.
+(`cw-contract-first`). The service consumes two events so far (`src/modules/email`): the restricted
+`one-time-code.issued.v1` of identity-service, listed in `restrictedEvents` through
+`RESTRICTED_EVENT_NAMES` of `@cadenway/contracts/events/identity-service`, whose consumer reads
+`EVENTS_RESTRICTED` and whose payload, a single-use code, is never logged; and
+`invitation.issued.v1` of organization-service, read from `EVENTS` in a tenant transaction of its
+organization, whose address and names are never logged either.
 
 ## Publishing
 

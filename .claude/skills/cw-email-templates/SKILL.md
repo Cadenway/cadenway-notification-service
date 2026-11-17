@@ -6,8 +6,9 @@ description: "How cadenway-notification-service builds and sends its emails: MJM
 # Email templates
 
 The 13 emails of the mockup (Emails artboard) are owned by this service. Copy is French and comes
-from the mockup. Two exist today, in `src/modules/email` (its `MODULE.md`): "Confirmation de
-l’adresse" (`email-verification`) and "Code de connexion" (`sign-in`).
+from the mockup. Three exist today, in `src/modules/email` (its `MODULE.md`): "Confirmation de
+l’adresse" (`email-verification`), "Code de connexion" (`sign-in`) and "Invitation"
+(`invitation`).
 
 ## Build
 
@@ -40,7 +41,8 @@ whose `chokidar@4.0.3` is refused by the `trustPolicy` of `pnpm-workspace.yaml`,
 
 - Every email has a text part and an HTML part, written together.
 - Subject of 60 characters at most, preheader of 90 at most.
-- Dates and times are rendered in the recipient's time zone.
+- Dates and times are rendered in the recipient's time zone; an invitee, who may have no account
+  yet, gets those of Paris, the time zone of the mockup.
 - The HTML part escapes the values it receives; the text part and the subject do not.
 
 ## Headers and consent
@@ -69,5 +71,5 @@ whose `chokidar@4.0.3` is refused by the `trustPolicy` of `pnpm-workspace.yaml`,
 
 - A template test renders with the mockup fixtures (Atelier Nord, Camille Martin, CAD-482) and
   checks the subject, the text part and the presence of the unsubscribe headers.
-- `tests/code-email.int-spec.ts` sends through a disposable Mailpit (`compose.dev.yaml`) and reads
-  the email back from its HTTP API.
+- `tests/code-email.int-spec.ts` and `tests/invitation-email.int-spec.ts` send through a
+  disposable Mailpit (`compose.dev.yaml`) and read the emails back from its HTTP API.

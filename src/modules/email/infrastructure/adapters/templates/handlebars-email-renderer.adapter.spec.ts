@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RenderedEmail } from '../../../application/models/code-email/rendered-email.model.js';
+import type { InvitationEmailMessage } from '../../../application/models/invitation-email/invitation-email-message.model.js';
 import type { CodeEmailTemplate } from '../../../domain/value-objects/code-email/code-email-template.value-object.js';
 import { OneTimeCode } from '../../../domain/value-objects/code-email/one-time-code.value-object.js';
 import { HandlebarsEmailRenderer } from './handlebars-email-renderer.adapter.js';
@@ -230,6 +231,141 @@ describe('HandlebarsEmailRenderer', () => {
       expect(email.html).toContain(`href="${WEB_APP_URL}/login/code"`);
       expect(visibleTextOf(email.html)).toContain('Ouvrir la page de connexion');
       expect(email.text).toContain(`Ouvrir la page de connexion : ${WEB_APP_URL}/login/code`);
+    });
+  });
+
+  describe('Invitation', () => {
+    const invitationId: string = '01938f71-5d0b-7c3e-9a51-2f0c4b8d7e10';
+
+    /**
+     * Function invite
+     *
+     * @description
+     * Renders the invitation of the mockup: Hugo Durand invites to join Atelier Nord (18 members)
+     * as Membre, until 16 November 2026.
+     *
+     * @param {Partial<InvitationEmailMessage>} overrides - Fields to change.
+     * @returns {RenderedEmail} The e-mail.
+     */
+    function invite(overrides: Partial<InvitationEmailMessage> = {}): RenderedEmail {
+      return renderer.renderInvitationEmail({
+        invitationId,
+        inviterName: 'Hugo Durand',
+        organizationName: 'Atelier Nord',
+        memberCount: 18,
+        role: 'member',
+        expiresAt: new Date('2026-11-16T09:15:00.000Z'),
+        ...overrides,
+      });
+    }
+
+    it('writes the subject and the preheader of the mockup, within 60 and 90 characters', () => {
+      const email: RenderedEmail = invite();
+
+      expect(email.subject).toBe('Hugo Durand vous invite à rejoindre Atelier Nord');
+      expect(email.subject.length).toBeLessThanOrEqual(60);
+      expect(preheaderOf(email.html)).toBe(
+        'Rôle proposé : Membre. L’invitation expire le 16 novembre 2026.',
+      );
+      expect(preheaderOf(email.html).length).toBeLessThanOrEqual(90);
+    });
+
+    it('writes the text part as the plain-text version of the mockup, without the personal message nor the space count', () => {
+      expect(invite().text).toBe(
+        [
+          'Atelier Nord · 18 membres',
+          '',
+          'Hugo Durand vous invite à rejoindre l’organisation Atelier Nord sur Cadenway, avec le rôle Membre.',
+          '',
+          `Rejoindre Atelier Nord : ${WEB_APP_URL}/invite/${invitationId}`,
+          '',
+          'L’invitation expire le 16 novembre 2026. Vous ne connaissez pas Hugo ? Ignorez cet e-mail.',
+          '',
+          '--',
+          'Vous recevez cet e-mail car un membre d’Atelier Nord a invité votre adresse.',
+          'Cadenway · 12 rue de la Charité, 69002 Lyon',
+          '',
+        ].join('\n'),
+      );
+    });
+
+    it('shows the header, the body, the button, the expiry note and the footer in the HTML part', () => {
+      const email: RenderedEmail = invite();
+      const visible: string = visibleTextOf(email.html);
+
+      expect(visible).toContain('HD → AN Atelier Nord 18 membres');
+      // The names and the role are bold, as in the mockup.
+      expect(visible).toContain(
+        'Hugo Durand vous invite à rejoindre l’organisation Atelier Nord sur Cadenway, avec le rôle Membre',
+      );
+      expect(email.html).toContain('<strong>Hugo Durand</strong>');
+      expect(email.html).toContain('<strong>Membre</strong>.');
+      expect(visible).toContain('Rejoindre Atelier Nord');
+      expect(email.html).toContain(`href="${WEB_APP_URL}/invite/${invitationId}"`);
+      expect(visible).toContain(
+        'L’invitation expire le 16 novembre 2026. Vous ne connaissez pas Hugo ? Ignorez cet e-mail.',
+      );
+      expect(visible).toContain(
+        'Vous recevez cet e-mail car un membre d’Atelier Nord a invité votre adresse.',
+      );
+      expect(visible).toContain('Cadenway · 12 rue de la Charité, 69002 Lyon');
+      expect(visible).not.toContain('espaces');
+      expect(visible).not.toContain('message personnel');
+      expect(email.html).toMatch(/<html lang="fr"/u);
+    });
+
+    it.each<[InvitationEmailMessage['role'], string]>([
+      ['admin', 'Administrateur'],
+      ['member', 'Membre'],
+      ['guest', 'Invité'],
+    ])('proposes the role %s as "%s" in the preheader and the body', (role, label) => {
+      const email: RenderedEmail = invite({ role });
+
+      expect(preheaderOf(email.html)).toBe(
+        `Rôle proposé : ${label}. L’invitation expire le 16 novembre 2026.`,
+      );
+      expect(email.text).toContain(`avec le rôle ${label}.`);
+    });
+
+    it('dates the expiry in Paris, the first of the month as "1er"', () => {
+      const email: RenderedEmail = invite({ expiresAt: new Date('2026-11-30T23:30:00.000Z') });
+
+      expect(email.text).toContain('L’invitation expire le 1er décembre 2026.');
+      expect(preheaderOf(email.html)).toContain('expire le 1er décembre 2026.');
+    });
+
+    it('escapes the names of the inviter and of the organization in the HTML part only', () => {
+      const email: RenderedEmail = invite({
+        inviterName: 'Hugo <img src=x onerror=alert(1)>',
+        organizationName: 'Atelier "Nord" & <b>Fils</b>',
+      });
+
+      expect(email.html).not.toContain('<img src=x');
+      expect(email.html).not.toContain('<b>Fils</b>');
+      expect(email.html).toContain('Hugo &lt;img src&#x3D;x onerror&#x3D;alert(1)&gt;');
+      expect(email.html).toContain('Atelier &quot;Nord&quot; &amp; &lt;b&gt;Fils&lt;/b&gt;');
+      expect(email.subject).toBe(
+        'Hugo <img src=x onerror=alert(1)> vous invite à rejoindre Atelier "Nord" & <b>Fils</b>',
+      );
+      expect(email.text).toContain('Rejoindre Atelier "Nord" & <b>Fils</b> : ');
+    });
+
+    it('elides the footer before a vowel only, and counts a lone member in the singular', () => {
+      const email: RenderedEmail = invite({ organizationName: 'Studio Pivot', memberCount: 1 });
+
+      expect(email.text).toContain('Studio Pivot · 1 membre\n');
+      expect(email.text).toContain(
+        'Vous recevez cet e-mail car un membre de Studio Pivot a invité votre adresse.',
+      );
+    });
+
+    it('leaves no variable unrendered', () => {
+      const email: RenderedEmail = invite();
+
+      for (const part of [email.subject, email.html, email.text]) {
+        expect(part).not.toMatch(/\{\{|\}\}/u);
+        expect(part).not.toContain('undefined');
+      }
     });
   });
 
