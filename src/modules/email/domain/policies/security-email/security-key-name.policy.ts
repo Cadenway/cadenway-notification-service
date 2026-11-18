@@ -14,23 +14,25 @@ const KEY_NAME_PATTERN: RegExp = /^[\p{L}\p{N}][\p{L}\p{N} ’'.,_()+&#-]{0,59}$
  * Constant DOMAIN_LIKE
  *
  * @description
- * A letter, a dot and a letter: what a domain name looks like, which a mail client may turn into a
- * link.
+ * A letter or a digit, a dot and a letter: what a domain name looks like ("aide.example",
+ * "cadenway2.fr"), which a mail client may turn into a link; a top-level domain starts with a
+ * letter, so a version ("v1.2") is not one.
  *
  * @type {RegExp}
  */
-const DOMAIN_LIKE: RegExp = /\p{L}\.\p{L}/u;
+const DOMAIN_LIKE: RegExp = /[\p{L}\p{N}]\.\p{L}/u;
 
 /**
  * Constant MAX_KEY_NAME_DIGITS
  *
  * @description
- * Digits a name may hold: enough for a model and a year ("Galaxy S24 (2024)"), too few for a
- * phone number.
+ * Digits a name may hold, as many as a device name (`client-text.policy`): enough for a model
+ * ("YubiKey 5C NFC", "iPhone 15 Pro"), too few for a phone number, a short one ("118 218")
+ * included.
  *
  * @type {number}
  */
-const MAX_KEY_NAME_DIGITS: number = 6;
+const MAX_KEY_NAME_DIGITS: number = 4;
 
 /**
  * Function shownSecurityKeyName

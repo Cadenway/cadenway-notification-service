@@ -155,7 +155,7 @@ sends it again; the event is not replayed.
   must not carry a text an attacker chose, such as a phone number or a domain. An unknown device
   type reads as `unknown`, as the contract asks. For the same reason, the name of a security key is
   shown only when it looks like the name of a device (`security-key-name.policy`: letters,
-  digits, spaces and a few signs, no domain, six digits at most); otherwise the e-mail names no key
+  digits, spaces and a few signs, no domain, four digits at most); otherwise the e-mail names no key
   ("Une clé de sécurité vient d’être ajoutée"), since whoever holds a session of the account
   chooses it.
 - A code e-mail of purpose `email-change` goes to the new address the event names. The send log

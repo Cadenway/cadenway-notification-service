@@ -25,12 +25,13 @@ const NAME_PATTERN: RegExp = /^\p{L}[\p{L}\p{N} ._()+-]{0,39}$/u;
  * Constant DOMAIN_LIKE
  *
  * @description
- * A letter, a dot and a letter: what a domain name looks like, which a mail client may turn into a
- * link.
+ * A letter or a digit, a dot and a letter: what a domain name looks like ("aide.example",
+ * "cadenway1.fr"), which a mail client may turn into a link; a top-level domain starts with a
+ * letter.
  *
  * @type {RegExp}
  */
-const DOMAIN_LIKE: RegExp = /\p{L}\.\p{L}/u;
+const DOMAIN_LIKE: RegExp = /[\p{L}\p{N}]\.\p{L}/u;
 
 /**
  * Constant MAX_NAME_DIGITS

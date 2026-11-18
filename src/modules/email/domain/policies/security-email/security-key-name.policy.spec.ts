@@ -8,7 +8,8 @@ describe('shownSecurityKeyName', () => {
     'Clé de Camille',
     'Camille’s key',
     'YubiKey 5 NFC #2',
-    'Galaxy S24 (2024)',
+    'Galaxy S24 Ultra',
+    'Clé v1.2',
     '1Password',
   ])('shows a name that looks like the name of a device: %j', (name) => {
     expect(shownSecurityKeyName(name)).toBe(name);
@@ -16,6 +17,12 @@ describe('shownSecurityKeyName', () => {
 
   it.each([
     ['a domain', 'cadenway-support.example'],
+    ['a domain whose label ends with a digit', 'Support cadenway-aide1.com'],
+    ['a bare domain with a digit', 'cadenway2.fr'],
+    ['a host name', 'www1.evil1.com'],
+    ['part of a phone number', 'Appelez le 01 23 45'],
+    ['a short phone number', 'Appelez le 118 218'],
+    ['a model and a year', 'Galaxy S24 (2023)'],
     ['an address', 'support@cadenway.example'],
     ['a link', 'https://evil.example'],
     ['a phone number', 'Appelez le 0612345678'],
