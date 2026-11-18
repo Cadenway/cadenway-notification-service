@@ -63,6 +63,18 @@ const DEVICE_TYPES: ReadonlyMap<string, { readonly alone: string; readonly after
 const UNKNOWN_IP_ADDRESS: string = 'Adresse inconnue';
 
 /**
+ * Constant BACKUP_CODE_COUNT
+ *
+ * @description
+ * Backup codes a setup or a regeneration gives, the most an account holds (`backupCodesRemaining`
+ * of `user.two-step-verification-changed.v1`, "7 codes inutilisés sur 10" of Compte › Sécurité et
+ * connexion).
+ *
+ * @type {number}
+ */
+const BACKUP_CODE_COUNT: number = 10;
+
+/**
  * Interface ZonedParts
  *
  * @description
@@ -342,6 +354,35 @@ export function closedSessionsLabel(
 }
 
 /**
+ * Function generatedCodesLabel
+ *
+ * @description
+ * The row "Codes de secours" of "Vérification en deux étapes activée": "10 codes générés", as the
+ * mockup says it, from the backup codes the event counts; singular below two, as French counts.
+ *
+ * @param {number} count - Backup codes not used yet (`backupCodesRemaining`).
+ * @returns {string} The count and its words.
+ */
+export function generatedCodesLabel(count: number): string {
+  return count < 2 ? `${String(count)} code généré` : `${String(count)} codes générés`;
+}
+
+/**
+ * Function unusedCodesLabel
+ *
+ * @description
+ * The row "Codes de secours" of the regenerated codes: "10 codes inutilisés sur 10", the wording
+ * of the row "Codes de secours" of Compte › Sécurité et connexion ("7 codes inutilisés sur 10").
+ *
+ * @param {number} count - Backup codes not used yet (`backupCodesRemaining`).
+ * @returns {string} The count, its words and the total.
+ */
+export function unusedCodesLabel(count: number): string {
+  const codes: string = count < 2 ? 'code inutilisé' : 'codes inutilisés';
+  return `${String(count)} ${codes} sur ${String(BACKUP_CODE_COUNT)}`;
+}
+
+/**
  * Function clientValues
  *
  * @description
@@ -370,8 +411,11 @@ function clientValues(
  * @description
  * Words a security message for its template. The links point to the web application: the reset
  * page with the token in the fragment (`/reset#token=…`, so that no server receives or logs it),
- * the forgotten-password page (`/forgot`), the sessions (`/account/security`) and the profile
- * (`/account`), the paths of the Emails artboard and of the contracts.
+ * the forgotten-password page (`/forgot`), the sessions and the two-step verification
+ * (`/account/security`, Compte › Sécurité et connexion) and the profile (`/account`), the paths of
+ * the Emails artboard and of the contracts. The two-step e-mails link to `/account/security` only:
+ * the backup codes are shown once, when they are generated, so no link promises to show them
+ * again. An empty `securityKeyName` makes the key e-mails name no key.
  *
  * @param {SecurityEmailMessage} message - What the e-mail says.
  * @param {string} webAppUrl - Origin of the web application, without a trailing slash.
@@ -424,6 +468,31 @@ export function securityEmailContext(
       return {
         ...clientValues(details.client, message.occurredAt, message.timeZone),
         sessionsUrl,
+      };
+    case 'two-step-enabled':
+      return {
+        ...clientValues(details.client, message.occurredAt, message.timeZone),
+        backupCodesLabel: generatedCodesLabel(details.backupCodesRemaining),
+        securityUrl: sessionsUrl,
+      };
+    case 'backup-codes-regenerated':
+      return {
+        ...clientValues(details.client, message.occurredAt, message.timeZone),
+        backupCodesLabel: unusedCodesLabel(details.backupCodesRemaining),
+        securityUrl: sessionsUrl,
+      };
+    case 'two-step-disabled':
+    case 'authenticator-app-replaced':
+      return {
+        ...clientValues(details.client, message.occurredAt, message.timeZone),
+        securityUrl: sessionsUrl,
+      };
+    case 'security-key-added':
+    case 'security-key-removed':
+      return {
+        ...clientValues(details.client, message.occurredAt, message.timeZone),
+        securityKeyName: details.securityKeyName ?? '',
+        securityUrl: sessionsUrl,
       };
   }
 }

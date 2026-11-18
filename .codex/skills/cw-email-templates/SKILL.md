@@ -7,12 +7,15 @@ description: "How cadenway-notification-service builds and sends its emails: MJM
 
 The 13 emails of the mockup (Emails artboard) are owned by this service. Copy is French and comes
 from the mockup; an email the artboard lacks is new copy in its style, listed in the pull request.
-Ten exist today, in `src/modules/email` (its `MODULE.md`): "Confirmation de l’adresse"
+Sixteen exist today, in `src/modules/email` (its `MODULE.md`): "Confirmation de l’adresse"
 (`email-verification`), "Code de connexion" (`sign-in`), the address-change code (`email-change`),
 "Invitation" (`invitation`), and the security emails of the account events: "Réinitialisation du
 mot de passe" (`password-reset`), "Mot de passe modifié" (`password-changed`), the notice to the
 previous address (`email-changed`), "Nouvelle connexion" (`new-device`), "Suppression du compte"
-(`deletion-scheduled`) and the cancelled deletion (`deletion-cancelled`).
+(`deletion-scheduled`) and the cancelled deletion (`deletion-cancelled`), and the e-mails of the
+changes of the two-step verification: "Vérification en deux étapes activée" (`two-step-enabled`)
+and, as new copy, `two-step-disabled`, `authenticator-app-replaced`, `backup-codes-regenerated`,
+`security-key-added` and `security-key-removed`.
 
 ## Build
 

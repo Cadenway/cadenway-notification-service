@@ -83,6 +83,10 @@ const consumers: Readonly<Record<string, { readonly stream: string; readonly nam
     stream: 'EVENTS',
     name: 'notification-service__request-deletion-cancelled-email',
   },
+  'user.two-step-verification-changed.v1': {
+    stream: 'EVENTS',
+    name: 'notification-service__request-two-step-email',
+  },
 };
 
 /** Host port of NATS, fixed for the run like in tests/service-wiring.int-spec.ts. */
@@ -798,5 +802,223 @@ describe('security e-mails', () => {
         '--no-ack',
       ),
     ).toBe(false);
+  });
+
+  describe('two-step verification', () => {
+    /** The name Camille Martin gives her key: an ampersand the HTML part must escape. */
+    const keyName = 'Clé d’Hugo & Camille';
+
+    /**
+     * A change of the two-step verification of Camille Martin, as identity-service publishes it.
+     *
+     * @param change - `change` of the event.
+     * @param fields - Members to change.
+     * @returns The payload.
+     */
+    function twoStepChanged(
+      change: string,
+      fields: Readonly<Record<string, unknown>> = {},
+    ): { readonly id: string; readonly occurredAt: string } {
+      return issued('user.two-step-verification-changed.v1', {
+        version: 8,
+        change,
+        enabled: change !== 'disabled',
+        methods: change === 'disabled' ? [] : ['authenticator-app', 'security-key'],
+        backupCodesRemaining: change === 'disabled' ? 0 : 10,
+        securityKey: change.startsWith('security-key-')
+          ? { id: randomUUID(), name: keyName }
+          : null,
+        client: firefoxOnWindows,
+        recipient: { email: camilleMartin.email, name: camilleMartin.name },
+        ...fields,
+      }) as { readonly id: string; readonly occurredAt: string };
+    }
+
+    /**
+     * Counts the messages Mailpit holds.
+     *
+     * @returns Their number.
+     */
+    async function messageCount(): Promise<number> {
+      return (await mailpit<{ readonly total: number }>('/api/v1/messages')).total;
+    }
+
+    /**
+     * Reads the e-mail of an event once its job sent it, found by its `Message-ID`, which derives
+     * from the id of its delivery.
+     *
+     * @param eventId - Id of the event.
+     * @returns The message, its headers and how many messages carry its `Message-ID`.
+     */
+    async function emailOf(eventId: string): Promise<{
+      readonly message: MailpitMessage;
+      readonly headers: Readonly<Record<string, readonly string[]>>;
+      readonly copies: number;
+    }> {
+      await waitUntilSettled(eventId);
+      const [delivery] = await deliveriesOf(eventId);
+      expect(delivery).toMatchObject({ status: 'sent', sent: true, pending: false });
+      const messageId = `${delivery?.id ?? ''}@cadenway.localhost`;
+      const found = await vi.waitFor(
+        async () => {
+          const list = await mailpit<{ readonly messages: readonly MailpitSummary[] }>(
+            '/api/v1/messages?limit=200',
+          );
+          const matching = list.messages.filter((summary) => summary.MessageID === messageId);
+          expect(matching.length).toBeGreaterThan(0);
+          return matching;
+        },
+        { timeout: 30_000, interval: 250 },
+      );
+      const [summary] = found;
+      if (summary === undefined) {
+        throw new Error(`No e-mail carries ${messageId}.`);
+      }
+      return {
+        message: await mailpit<MailpitMessage>(`/api/v1/message/${summary.ID}`),
+        headers: await mailpit<Readonly<Record<string, readonly string[]>>>(
+          `/api/v1/message/${summary.ID}/headers`,
+        ),
+        copies: found.length,
+      };
+    }
+
+    /** The first change of the block, delivered again by a later spec. */
+    const enabled = twoStepChanged('enabled', { timeZone: 'America/New_York' });
+
+    /** The deliveries of the key changes, which the log lines name by their ids. */
+    const keyDeliveryIds: string[] = [];
+
+    it.each<[string, string, readonly string[]]>([
+      [
+        'enabled',
+        'La vérification en deux étapes est activée',
+        [
+          'Méthode : Application d’authentification',
+          'Codes de secours : 10 codes générés',
+          `Activée le : ${dateTimeLabel(new Date(enabled.occurredAt), 'America/New_York')}`,
+        ],
+      ],
+      [
+        'disabled',
+        'La vérification en deux étapes est désactivée',
+        ['Votre compte n’est protégé que par un mot de passe.'],
+      ],
+      [
+        'authenticator-app-replaced',
+        'Votre application d’authentification a été remplacée',
+        ['les codes de l’ancienne ne sont plus acceptés'],
+      ],
+      [
+        'backup-codes-regenerated',
+        'Vos codes de secours ont été renouvelés',
+        ['Codes de secours : 10 codes inutilisés sur 10'],
+      ],
+      [
+        'security-key-added',
+        'Une clé de sécurité a été ajoutée à votre compte',
+        [`La clé de sécurité ${keyName} vient d’être ajoutée à votre compte`],
+      ],
+      [
+        'security-key-removed',
+        'Une clé de sécurité a été retirée de votre compte',
+        [`La clé de sécurité ${keyName} vient d’être retirée de votre compte`],
+      ],
+    ])(
+      'e-mails the change %s published as identity, with its subject and content',
+      async (change, subject, lines) => {
+        const event = change === 'enabled' ? enabled : twoStepChanged(change);
+
+        publishAsIdentity('user.two-step-verification-changed.v1', event, event.id);
+
+        const { message, headers, copies } = await emailOf(event.id);
+        expect(copies).toBe(1);
+        expect(message.Subject).toBe(subject);
+        expect(message.To).toEqual([{ Name: camilleMartin.name, Address: camilleMartin.email }]);
+        for (const line of lines) {
+          expect(message.Text).toContain(line);
+        }
+        expect(message.Text).toContain('Appareil : Firefox sur Windows');
+        expect(message.Text).toContain('Adresse IP : 192.0.2.14');
+        expect(message.Text).toContain(
+          'Gérer la vérification en deux étapes : http://app.cadenway.localhost/account/security',
+        );
+        expect(message.HTML).toContain('Sécurité · toujours envoyé');
+        if (change.startsWith('security-key-')) {
+          expect(message.HTML).toContain('<strong>Clé d’Hugo &amp; Camille</strong>');
+          keyDeliveryIds.push((await deliveriesOf(event.id))[0]?.id ?? '');
+        }
+        expect(headers).not.toHaveProperty('List-Unsubscribe');
+        expect(headers).not.toHaveProperty('List-Unsubscribe-Post');
+        expect((await deliveriesOf(event.id))[0]?.template).toBe(
+          change === 'enabled' || change === 'disabled' ? `two-step-${change}` : change,
+        );
+      },
+    );
+
+    it('sends one e-mail when the same change is delivered again', async () => {
+      const before = await messageCount();
+
+      // A new Nats-Msg-Id, so the broker stores it again and the consumer receives it again.
+      publishAsIdentity('user.two-step-verification-changed.v1', enabled, randomUUID());
+      await waitUntilHandled('user.two-step-verification-changed.v1');
+
+      expect(await messageCount()).toBe(before);
+      expect(await deliveriesOf(enabled.id)).toHaveLength(1);
+      expect((await emailOf(enabled.id)).copies).toBe(1);
+    });
+
+    it('sends nothing for a change it does not know, and records it skipped', async () => {
+      const before = await messageCount();
+      const unknown = twoStepChanged('admin-reset', { enabled: false, methods: [] });
+
+      publishAsIdentity('user.two-step-verification-changed.v1', unknown, unknown.id);
+      await waitUntilHandled('user.two-step-verification-changed.v1');
+
+      expect(await deliveriesOf(unknown.id)).toEqual([
+        {
+          id: expect.any(String) as string,
+          template: null,
+          status: 'skipped',
+          skip_reason: 'change-not-supported',
+          sent: false,
+          pending: false,
+        },
+      ]);
+      expect(await messageCount()).toBe(before);
+    });
+
+    it('never writes the name of a key in a log line', () => {
+      const written = lines.join('');
+
+      // The capture holds the lines of the key changes.
+      expect(keyDeliveryIds).toHaveLength(2);
+      for (const deliveryId of keyDeliveryIds) {
+        expect(written).toContain(deliveryId);
+      }
+      expect(written).not.toContain('Clé d’Hugo');
+      expect(written).not.toContain(camilleMartin.email);
+      expect(written).not.toContain('192.0.2.14');
+    });
+
+    it('reads the changes through its granted consumer only, on its own filter', () => {
+      expect(
+        natsAccepts(
+          notification,
+          '--inbox-prefix',
+          '_INBOX.notification',
+          'consumer',
+          'add',
+          'EVENTS',
+          'notification-service__request-two-step-email',
+          '--pull',
+          '--filter',
+          'evt.user.deleted.v1',
+          '--deliver',
+          'new',
+          '--defaults',
+        ),
+      ).toBe(false);
+    });
   });
 });

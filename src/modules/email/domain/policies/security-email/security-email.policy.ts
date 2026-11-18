@@ -1,3 +1,4 @@
+import type { SecurityEmailTemplate } from '../../value-objects/security-email/security-email-template.value-object.js';
 import { SendWindow } from '../../value-objects/security-email/send-window.value-object.js';
 import type { SecurityEmailDecision } from './security-email-decision.policy.js';
 
@@ -35,14 +36,25 @@ export function noticeWindow(occurredAt: Date): SendWindow {
  * @description
  * Decides whether a security e-mail leaves. A security e-mail is always sent: no preference, Do not
  * disturb or digest applies (cw-notification-domain, "Sécurité · toujours envoyé" of the Emails
- * artboard). It is skipped only when its window closed: the contract of
- * `password-reset-link.issued.v1` says a consumer does not send a link whose `expiresAt` has
- * passed, and a notice past its day is no longer sent.
+ * artboard). It is skipped only when the event asks for no e-mail this version knows (a `change`
+ * of `user.two-step-verification-changed.v1` added later, for which the contract asks a consumer
+ * to send nothing), or when its window closed: the contract of `password-reset-link.issued.v1`
+ * says a consumer does not send a link whose `expiresAt` has passed, and a notice past its day is
+ * no longer sent.
  *
+ * @param {SecurityEmailTemplate | null} template - The e-mail the event asks for, or `null` when
+ * this version has none for it.
  * @param {SendWindow} window - When the e-mail may leave.
  * @param {Date} now - The current instant.
  * @returns {SecurityEmailDecision} Send, or skip with a reason.
  */
-export function decideSecurityEmail(window: SendWindow, now: Date): SecurityEmailDecision {
+export function decideSecurityEmail(
+  template: SecurityEmailTemplate | null,
+  window: SendWindow,
+  now: Date,
+): SecurityEmailDecision {
+  if (template === null) {
+    return { kind: 'skip', reason: 'change-not-supported' };
+  }
   return window.isClosedAt(now) ? { kind: 'skip', reason: 'expired' } : { kind: 'send' };
 }

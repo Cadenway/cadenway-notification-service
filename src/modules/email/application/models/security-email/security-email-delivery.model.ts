@@ -26,12 +26,13 @@ export interface SecurityEmailDelivery {
    * Property template
    *
    * @description
-   * The e-mail to send.
+   * The e-mail to send; `null` for a delivery recorded `skipped` because its event asked for no
+   * e-mail this version knows, which no job ever sends.
    *
-   * @type {SecurityEmailTemplate}
+   * @type {SecurityEmailTemplate | null}
    * @readonly
    */
-  readonly template: SecurityEmailTemplate;
+  readonly template: SecurityEmailTemplate | null;
 
   /**
    * Property status

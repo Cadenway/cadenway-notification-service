@@ -20,7 +20,8 @@ import { SendWindow } from '../../../../../domain/value-objects/security-email/s
  * Constant TEMPLATES
  *
  * @description
- * The values of `security_email_deliveries.template`, as its check constraint allows them.
+ * The values of `security_email_deliveries.template`, as its check constraint allows them, besides
+ * `null`.
  *
  * @type {readonly SecurityEmailTemplate[]}
  */
@@ -31,6 +32,12 @@ const TEMPLATES: readonly SecurityEmailTemplate[] = [
   'new-device',
   'deletion-scheduled',
   'deletion-cancelled',
+  'two-step-enabled',
+  'two-step-disabled',
+  'authenticator-app-replaced',
+  'backup-codes-regenerated',
+  'security-key-added',
+  'security-key-removed',
 ];
 
 /**
@@ -93,6 +100,20 @@ const detailsRecord = z.discriminatedUnion('template', [
   z.object({ template: z.literal('new-device'), client: clientRecord }),
   z.object({ template: z.literal('deletion-scheduled'), deleteAt: z.iso.datetime() }),
   z.object({ template: z.literal('deletion-cancelled'), client: clientRecord }),
+  z.object({
+    template: z.literal(['two-step-enabled', 'backup-codes-regenerated']),
+    backupCodesRemaining: z.int().min(0).max(10),
+    client: clientRecord,
+  }),
+  z.object({
+    template: z.literal(['two-step-disabled', 'authenticator-app-replaced']),
+    client: clientRecord,
+  }),
+  z.object({
+    template: z.literal(['security-key-added', 'security-key-removed']),
+    securityKeyName: z.string().nullable(),
+    client: clientRecord,
+  }),
 ]);
 
 /**
@@ -160,6 +181,12 @@ function toRecord(details: SecurityEmailDetails): {
     case 'email-changed':
     case 'new-device':
     case 'deletion-cancelled':
+    case 'two-step-enabled':
+    case 'two-step-disabled':
+    case 'authenticator-app-replaced':
+    case 'backup-codes-regenerated':
+    case 'security-key-added':
+    case 'security-key-removed':
       return { record: details, token: null };
   }
 }
@@ -190,6 +217,12 @@ function toDetails(value: unknown, token: string | null): SecurityEmailDetails {
     case 'email-changed':
     case 'new-device':
     case 'deletion-cancelled':
+    case 'two-step-enabled':
+    case 'two-step-disabled':
+    case 'authenticator-app-replaced':
+    case 'backup-codes-regenerated':
+    case 'security-key-added':
+    case 'security-key-removed':
       return record;
   }
 }
@@ -303,7 +336,7 @@ export class DrizzleSecurityEmailDeliveryRepository implements SecurityEmailDeli
     return this.system.run(async (tx: TransactionScope): Promise<SecurityEmailDelivery | null> => {
       const rows: readonly {
         readonly id: string;
-        readonly template: string;
+        readonly template: string | null;
         readonly status: string;
         readonly occurredAt: Date;
         readonly sendBefore: Date;
@@ -338,7 +371,7 @@ export class DrizzleSecurityEmailDeliveryRepository implements SecurityEmailDeli
       }
       return {
         id: row.id,
-        template: oneOf(TEMPLATES, row.template, 'template'),
+        template: row.template === null ? null : oneOf(TEMPLATES, row.template, 'template'),
         status: oneOf(STATUSES, row.status, 'status'),
         window: SendWindow.between(row.occurredAt, row.sendBefore),
         content:

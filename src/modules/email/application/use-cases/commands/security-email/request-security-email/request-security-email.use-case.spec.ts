@@ -67,6 +67,33 @@ function resetRequested(
   };
 }
 
+/**
+ * Function twoStepChanged
+ *
+ * @description
+ * A change of the two-step verification of Camille Martin on 9 November 2026 at 14:10 in Paris, as
+ * `user.two-step-verification-changed.v1` gives it.
+ *
+ * @param {string} change - `change` of the event.
+ * @param {string | null} securityKeyName - Name of the key added or removed, or `null`.
+ * @returns {RequestSecurityEmailInput} The input.
+ */
+function twoStepChanged(
+  change: string,
+  securityKeyName: string | null = null,
+): RequestSecurityEmailInput {
+  return resetRequested({
+    eventId: '019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e08',
+    request: {
+      template: 'two-step-verification-changed',
+      change,
+      backupCodesRemaining: 10,
+      securityKeyName,
+      client: firefoxOnWindows,
+    },
+  });
+}
+
 describe('RequestSecurityEmail', () => {
   let deliveries: InMemorySecurityEmailDeliveries;
   let queue: InMemorySecurityEmailQueue;
@@ -248,5 +275,96 @@ describe('RequestSecurityEmail', () => {
       ).rejects.toThrow(InvalidSendWindowError);
     }
     expect(deliveries.deliveries.size).toBe(0);
+  });
+  it.each([
+    ['enabled', 'two-step-enabled'],
+    ['disabled', 'two-step-disabled'],
+    ['authenticator-app-replaced', 'authenticator-app-replaced'],
+    ['backup-codes-regenerated', 'backup-codes-regenerated'],
+    ['security-key-added', 'security-key-added'],
+    ['security-key-removed', 'security-key-removed'],
+  ])(
+    'records the change %s of the two-step verification as the e-mail %s, with a day to leave',
+    async (change, template) => {
+      const result: RequestSecurityEmailOutput = await useCase.execute(
+        twoStepChanged(change, 'YubiKey 5C NFC'),
+      );
+
+      expect(result).toEqual({ outcome: 'queued', deliveryId: queue.enqueued[0] });
+      const [stored] = [...deliveries.deliveries.values()];
+      expect(stored?.draft).toMatchObject({ template, skipReason: null });
+      expect(stored?.draft.window.sendBefore).toEqual(new Date('2026-11-10T13:10:00.000Z'));
+      expect([...deliveries.contents.values()][0]?.details.template).toBe(template);
+    },
+  );
+
+  it('keeps the backup codes left for the e-mails that count them, and no key name', async () => {
+    await useCase.execute(twoStepChanged('enabled'));
+    await useCase.execute({
+      ...twoStepChanged('backup-codes-regenerated'),
+      eventId: '019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e09',
+    });
+
+    expect([...deliveries.contents.values()].map((content) => content.details)).toEqual([
+      {
+        template: 'two-step-enabled',
+        backupCodesRemaining: 10,
+        client: {
+          deviceType: 'desktop',
+          browser: 'Firefox',
+          os: 'Windows',
+          osVersion: null,
+          ipAddress: '192.0.2.14',
+        },
+      },
+      {
+        template: 'backup-codes-regenerated',
+        backupCodesRemaining: 10,
+        client: {
+          deviceType: 'desktop',
+          browser: 'Firefox',
+          os: 'Windows',
+          osVersion: null,
+          ipAddress: '192.0.2.14',
+        },
+      },
+    ]);
+  });
+
+  it('keeps the name of a key cleaned, and none that does not look like the name of a device', async () => {
+    await useCase.execute(twoStepChanged('security-key-added', 'YubiKey\u202e 5C\nNFC'));
+    await useCase.execute({
+      ...twoStepChanged('security-key-removed', 'Appelez le 0612345678'),
+      eventId: '019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8e09',
+    });
+
+    expect(
+      [...deliveries.contents.values()].map((content) =>
+        'securityKeyName' in content.details ? content.details.securityKeyName : undefined,
+      ),
+    ).toEqual(['YubiKey 5C NFC', null]);
+  });
+
+  it('records a change it does not know as skipped, without template, content or job', async () => {
+    const result: RequestSecurityEmailOutput = await useCase.execute(twoStepChanged('admin-reset'));
+
+    expect(result).toMatchObject({ outcome: 'skipped', reason: 'change-not-supported' });
+    const [stored] = [...deliveries.deliveries.values()];
+    expect(stored).toMatchObject({
+      status: 'skipped',
+      skipReason: 'change-not-supported',
+      draft: { template: null, skipReason: 'change-not-supported' },
+    });
+    expect(deliveries.contents.size).toBe(0);
+    expect(queue.enqueued).toEqual([]);
+  });
+
+  it('writes nothing when a change it does not know is delivered again', async () => {
+    await useCase.execute(twoStepChanged('admin-reset'));
+
+    const again: RequestSecurityEmailOutput = await useCase.execute(twoStepChanged('admin-reset'));
+
+    expect(again).toEqual({ outcome: 'duplicate' });
+    expect(deliveries.deliveries.size).toBe(1);
   });
 });

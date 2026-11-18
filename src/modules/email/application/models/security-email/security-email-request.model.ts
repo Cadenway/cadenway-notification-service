@@ -15,9 +15,14 @@ import type { SecurityEmailRequestClient } from './security-email-request-client
  * - `email-changed`: the new address, the notice going to the previous one;
  * - `new-device`: the browser of the new session;
  * - `deletion-scheduled`: when the account will be deleted;
- * - `deletion-cancelled`: the browser whose sign-in cancelled the deletion.
+ * - `deletion-cancelled`: the browser whose sign-in cancelled the deletion;
+ * - `two-step-verification-changed`: a change of the two-step verification, from
+ *   `user.two-step-verification-changed.v1`, whose template the use case picks from `change`
+ *   (`twoStepEmailTemplate`); a change this version does not know asks for none. The backup codes
+ *   not used yet and the name of the key added or removed (`null` for the other changes) are
+ *   raw: the use case cleans the name.
  *
- * @type {{ readonly template: 'password-reset'; readonly token: string; readonly expiresAt: Date; readonly client: SecurityEmailRequestClient } | { readonly template: 'password-changed'; readonly method: PasswordChangeMethod; readonly closedSessionCount: number; readonly client: SecurityEmailRequestClient } | { readonly template: 'email-changed'; readonly newEmail: string; readonly client: SecurityEmailRequestClient } | { readonly template: 'new-device'; readonly client: SecurityEmailRequestClient } | { readonly template: 'deletion-scheduled'; readonly deleteAt: Date } | { readonly template: 'deletion-cancelled'; readonly client: SecurityEmailRequestClient }}
+ * @type {{ readonly template: 'password-reset'; readonly token: string; readonly expiresAt: Date; readonly client: SecurityEmailRequestClient } | { readonly template: 'password-changed'; readonly method: PasswordChangeMethod; readonly closedSessionCount: number; readonly client: SecurityEmailRequestClient } | { readonly template: 'email-changed'; readonly newEmail: string; readonly client: SecurityEmailRequestClient } | { readonly template: 'new-device'; readonly client: SecurityEmailRequestClient } | { readonly template: 'deletion-scheduled'; readonly deleteAt: Date } | { readonly template: 'deletion-cancelled'; readonly client: SecurityEmailRequestClient } | { readonly template: 'two-step-verification-changed'; readonly change: string; readonly backupCodesRemaining: number; readonly securityKeyName: string | null; readonly client: SecurityEmailRequestClient }}
  */
 export type SecurityEmailRequest =
   | {
@@ -39,4 +44,11 @@ export type SecurityEmailRequest =
     }
   | { readonly template: 'new-device'; readonly client: SecurityEmailRequestClient }
   | { readonly template: 'deletion-scheduled'; readonly deleteAt: Date }
-  | { readonly template: 'deletion-cancelled'; readonly client: SecurityEmailRequestClient };
+  | { readonly template: 'deletion-cancelled'; readonly client: SecurityEmailRequestClient }
+  | {
+      readonly template: 'two-step-verification-changed';
+      readonly change: string;
+      readonly backupCodesRemaining: number;
+      readonly securityKeyName: string | null;
+      readonly client: SecurityEmailRequestClient;
+    };

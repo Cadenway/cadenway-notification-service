@@ -6,6 +6,7 @@ import {
   USER_DELETION_SCHEDULED_V1,
   USER_EMAIL_CHANGED_V1,
   USER_PASSWORD_CHANGED_V1,
+  USER_TWO_STEP_VERIFICATION_CHANGED_V1,
 } from '@cadenway/contracts/events/identity-service';
 import type {
   PasswordResetLinkIssuedV1,
@@ -14,6 +15,7 @@ import type {
   UserDeletionScheduledV1,
   UserEmailChangedV1,
   UserPasswordChangedV1,
+  UserTwoStepVerificationChangedV1,
 } from '@cadenway/contracts/events/identity-service';
 import { EventConsumers } from '@cadenway/nest-messaging';
 import { Injectable, Logger } from '@nestjs/common';
@@ -30,7 +32,7 @@ import type { RequestSecurityEmailOutput } from '../../../../application/use-cas
  * event, named after the e-mail they request and granted by these exact names in cadenway-ops.
  * Renaming one creates a new consumer, which needs its grant first.
  *
- * @type {Readonly<Record<'passwordReset' | 'passwordChanged' | 'emailChanged' | 'newDevice' | 'deletionScheduled' | 'deletionCancelled', string>>}
+ * @type {Readonly<Record<'passwordReset' | 'passwordChanged' | 'emailChanged' | 'newDevice' | 'deletionScheduled' | 'deletionCancelled' | 'twoStep', string>>}
  */
 const HANDLERS: Readonly<
   Record<
@@ -39,7 +41,8 @@ const HANDLERS: Readonly<
     | 'emailChanged'
     | 'newDevice'
     | 'deletionScheduled'
-    | 'deletionCancelled',
+    | 'deletionCancelled'
+    | 'twoStep',
     string
   >
 > = {
@@ -49,13 +52,14 @@ const HANDLERS: Readonly<
   newDevice: 'request-new-device-email',
   deletionScheduled: 'request-deletion-scheduled-email',
   deletionCancelled: 'request-deletion-cancelled-email',
+  twoStep: 'request-two-step-email',
 };
 
 /**
  * Class AccountSecurityEventsHandler
  *
  * @description
- * Consumes the six account events of identity-service that each ask for one security e-mail
+ * Consumes the seven account events of identity-service that each ask for one security e-mail
  * ("Sécurité · toujours envoyé"), one durable consumer per event:
  *
  * - `password-reset-link.issued.v1`, restricted: read from `EVENTS_RESTRICTED` on
@@ -66,7 +70,10 @@ const HANDLERS: Readonly<
  *   `user.deletion-scheduled.v1` and `user.deletion-cancelled.v1`: read from `EVENTS` on
  *   `evt.<name>`; consumers `notification-service__request-password-changed-email`,
  *   `…__request-email-changed-email`, `…__request-new-device-email`,
- *   `…__request-deletion-scheduled-email` and `…__request-deletion-cancelled-email`.
+ *   `…__request-deletion-scheduled-email` and `…__request-deletion-cancelled-email`;
+ * - `user.two-step-verification-changed.v1`: read from `EVENTS` on `evt.<name>`; consumer
+ *   `notification-service__request-two-step-email`. The use case picks the e-mail from `change`
+ *   and records a change it does not know as `skipped`, sending nothing.
  *
  * The kit validates each payload with `eventSchemas` of `@cadenway/contracts` (an invalid one is a
  * dead letter at once; the body of a restricted one is dropped) and records its id with the
@@ -75,7 +82,8 @@ const HANDLERS: Readonly<
  * new consumer does not replay the seven days of events its stream keeps.
  *
  * Each event maps to `RequestSecurityEmail`, and the outcome is logged at `info` with ids only:
- * never the address, the name, the device, the IP address nor the reset token.
+ * never the address, the name, the device, the IP address, the reset token nor the name of a
+ * security key.
  */
 @Injectable()
 export class AccountSecurityEventsHandler implements OnApplicationBootstrap {
@@ -136,9 +144,9 @@ export class AccountSecurityEventsHandler implements OnApplicationBootstrap {
    * Method onApplicationBootstrap
    *
    * @description
-   * Registers the six handlers once the application has started.
+   * Registers the seven handlers once the application has started.
    *
-   * @returns {Promise<void>} Settles once the six durable consumers exist.
+   * @returns {Promise<void>} Settles once the seven durable consumers exist.
    */
   public async onApplicationBootstrap(): Promise<void> {
     await this.consumers.subscribe({
@@ -187,6 +195,14 @@ export class AccountSecurityEventsHandler implements OnApplicationBootstrap {
       deliverPolicy: 'new',
       handle: (payload: UserDeletionCancelledV1): Promise<void> =>
         this.handleDeletionCancelled(payload),
+    });
+    await this.consumers.subscribe({
+      handler: HANDLERS.twoStep,
+      schemas: eventSchemas,
+      event: USER_TWO_STEP_VERIFICATION_CHANGED_V1,
+      deliverPolicy: 'new',
+      handle: (payload: UserTwoStepVerificationChangedV1): Promise<void> =>
+        this.handleTwoStepVerificationChanged(payload),
     });
   }
 
@@ -348,13 +364,49 @@ export class AccountSecurityEventsHandler implements OnApplicationBootstrap {
   }
 
   /**
+   * Method handleTwoStepVerificationChanged
+   *
+   * @description
+   * Asks for the e-mail of a change of the two-step verification: the use case picks it from
+   * `change` ("Vérification en deux étapes activée" for `enabled`, new copy for the others) and
+   * sends none for a change it does not know. The id of the key added or removed is logged; its
+   * name is not.
+   *
+   * @param {UserTwoStepVerificationChangedV1} payload - The validated event.
+   * @returns {Promise<void>} Settles once the delivery, and its job when there is one, are
+   * committed.
+   */
+  public async handleTwoStepVerificationChanged(
+    payload: UserTwoStepVerificationChangedV1,
+  ): Promise<void> {
+    await this.request(
+      payload.securityKey === null ? {} : { securityKeyId: payload.securityKey.id },
+      {
+        eventId: payload.id,
+        userId: payload.userId,
+        occurredAt: new Date(payload.occurredAt),
+        recipient: { email: payload.recipient.email, name: payload.recipient.name },
+        language: payload.language,
+        timeZone: payload.timeZone,
+        request: {
+          template: 'two-step-verification-changed',
+          change: payload.change,
+          backupCodesRemaining: payload.backupCodesRemaining,
+          securityKeyName: payload.securityKey?.name ?? null,
+          client: payload.client,
+        },
+      },
+    );
+  }
+
+  /**
    * Method request
    *
    * @description
    * Hands an event to the use case and logs its outcome with ids only.
    *
    * @param {Readonly<Record<string, string>>} ids - Ids of the event worth logging besides its own
-   * and its account's: the link or the session.
+   * and its account's: the link, the session or the security key.
    * @param {RequestSecurityEmailInput} input - The event, mapped.
    * @returns {Promise<void>} Settles once the delivery and its job are committed.
    */

@@ -127,6 +127,12 @@ const TEMPLATES: readonly TemplateName[] = [
   'new-device',
   'deletion-scheduled',
   'deletion-cancelled',
+  'two-step-enabled',
+  'two-step-disabled',
+  'authenticator-app-replaced',
+  'backup-codes-regenerated',
+  'security-key-added',
+  'security-key-removed',
 ];
 
 /**
@@ -176,8 +182,9 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
  *
  * The French copy is the one of the Emails artboard of the mockup, adapted to a 6-digit code for
  * the code e-mails; the e-mails the artboard lacks (the address-change code, the notice to the
- * previous address, the cancelled deletion) are new copy in its style. Every recipient gets it,
- * whatever the `language` of the event: the mockup has no other language yet.
+ * previous address, the cancelled deletion, the changes of the two-step verification but its
+ * activation) are new copy in its style. Every recipient gets it, whatever the `language` of the
+ * event: the mockup has no other language yet.
  */
 export class HandlebarsEmailRenderer
   implements EmailRenderer, InvitationEmailRenderer, SecurityEmailRenderer
@@ -310,7 +317,8 @@ export class HandlebarsEmailRenderer
    * @description
    * Renders a security e-mail of the "Compte et sécurité" group: the template of its details, the
    * rows "Appareil", "Adresse IP" and "Date" in the time zone of the account (Paris when unknown),
-   * the reset link with its token in the fragment. The values are escaped in the HTML part.
+   * the reset link with its token in the fragment, the name of a security key. The values are
+   * escaped in the HTML part.
    *
    * @param {SecurityEmailMessage} message - What the e-mail says.
    * @returns {RenderedEmail} The subject and the two parts.

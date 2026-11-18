@@ -7,6 +7,7 @@ import type {
   UserDeletionScheduledV1,
   UserEmailChangedV1,
   UserPasswordChangedV1,
+  UserTwoStepVerificationChangedV1,
 } from '@cadenway/contracts/events/identity-service';
 import type { EventConsumers, EventContext } from '@cadenway/nest-messaging';
 import { Logger } from '@nestjs/common';
@@ -155,6 +156,32 @@ const common: Readonly<Record<string, unknown>> = {
   language: 'en',
   timeZone: 'Europe/Paris',
 };
+
+/**
+ * Function twoStepChanged
+ *
+ * @description
+ * A change of the two-step verification of Camille Martin, valid against the schema of the
+ * contract, as its examples give it.
+ *
+ * @param {string} id - Id of the event.
+ * @param {string} change - `change` of the event.
+ * @returns {UserTwoStepVerificationChangedV1} The event.
+ */
+function twoStepChanged(id: string, change: string): UserTwoStepVerificationChangedV1 {
+  return eventSchemas['user.two-step-verification-changed.v1'].parse({
+    ...common,
+    id,
+    version: 9,
+    change,
+    enabled: true,
+    methods: ['authenticator-app', 'security-key'],
+    backupCodesRemaining: 10,
+    securityKey: { id: '019a6c52-1d2e-7f3a-8b4c-5d6e7f8a9b01', name: 'YubiKey 5C NFC' },
+    client,
+    recipient: { email: camilleMartin.email, name: camilleMartin.name },
+  });
+}
 
 /**
  * Constant events
@@ -357,6 +384,12 @@ describe('AccountSecurityEventsHandler', () => {
         deliverPolicy: 'new',
         schemas: true,
       },
+      {
+        handler: 'request-two-step-email',
+        event: 'user.two-step-verification-changed.v1',
+        deliverPolicy: 'new',
+        schemas: true,
+      },
     ]);
   });
 
@@ -435,5 +468,48 @@ describe('AccountSecurityEventsHandler', () => {
 
     expect(sender.sent).toHaveLength(1);
     expect(deliveries.deliveries.size).toBe(1);
+  });
+  it('sends one security e-mail per change of the two-step verification, naming the key', async () => {
+    const changes: readonly string[] = [
+      'enabled',
+      'disabled',
+      'authenticator-app-replaced',
+      'backup-codes-regenerated',
+      'security-key-added',
+      'security-key-removed',
+    ];
+    for (const [index, change] of changes.entries()) {
+      await deliver(
+        'user.two-step-verification-changed.v1',
+        twoStepChanged(`019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8f0${String(index)}`, change),
+      );
+    }
+    await workQueue();
+
+    expect(sender.sent.map((email) => [email.subject, email.unsubscribe])).toEqual([
+      ['La vérification en deux étapes est activée', false],
+      ['La vérification en deux étapes est désactivée', false],
+      ['Votre application d’authentification a été remplacée', false],
+      ['Vos codes de secours ont été renouvelés', false],
+      ['Une clé de sécurité a été ajoutée à votre compte', false],
+      ['Une clé de sécurité a été retirée de votre compte', false],
+    ]);
+    expect(sender.sent[4]?.text).toContain(
+      'La clé de sécurité YubiKey 5C NFC vient d’être ajoutée',
+    );
+  });
+
+  it('sends nothing for a change of the two-step verification it does not know, and records it skipped', async () => {
+    await deliver(
+      'user.two-step-verification-changed.v1',
+      twoStepChanged('019a6b44-0a1b-7c2d-8e3f-4a5b6c7d8f10', 'admin-reset'),
+    );
+    await workQueue();
+
+    expect(sender.sent).toEqual([]);
+    expect(queue.enqueued).toEqual([]);
+    expect([...deliveries.deliveries.values()]).toMatchObject([
+      { status: 'skipped', skipReason: 'change-not-supported', draft: { template: null } },
+    ]);
   });
 });

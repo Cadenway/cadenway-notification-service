@@ -1,0 +1,48 @@
+<mjml lang="fr">
+  <mj-head>
+    <mj-include path="../partials/head.mjml" />
+    <mj-preview
+      >Elle pourra servir dès la prochaine connexion. Ce n’était pas vous ? Agissez
+      vite.</mj-preview
+    >
+  </mj-head>
+  <mj-body background-color="#f2f2f4" width="600px">
+    <mj-wrapper padding="32px 20px">
+      <mj-include path="../partials/security-header.mjml" />
+      <mj-section
+        background-color="#ffffff"
+        border="1px solid #e4e4e7"
+        border-radius="12px"
+        padding="32px"
+      >
+        <mj-column>
+          <mj-text font-size="20px" line-height="28px" font-weight="600" padding="0 0 20px 0">
+            Clé de sécurité ajoutée
+          </mj-text>
+          <mj-text padding="0 0 20px 0">
+            {{#if securityKeyName}}La clé de sécurité
+            <strong>{{ securityKeyName }}</strong> vient{{else}}Une clé de sécurité vient{{/if}}
+            d’être ajoutée à votre compte : elle pourra servir dès la prochaine connexion.
+          </mj-text>
+          <mj-include path="../partials/client-rows.mjml" />
+          <mj-divider border-width="1px" border-color="#e4e4e7" padding="0 0 20px 0" />
+          <mj-text padding="0 0 20px 0">
+            <strong>Ce n’était pas vous ?</strong> Quelqu’un a peut-être accès à votre compte. Si
+            vous êtes encore connecté, retirez cette clé, changez votre mot de passe et vérifiez vos
+            sessions, puis prévenez l’administrateur de votre organisation.
+          </mj-text>
+          <mj-button
+            href="{{securityUrl}}"
+            align="left"
+            background-color="#ffffff"
+            color="#18181b"
+            border="1px solid #e4e4e7"
+          >
+            Gérer la vérification en deux étapes
+          </mj-button>
+        </mj-column>
+      </mj-section>
+      <mj-include path="../partials/security-footer.mjml" />
+    </mj-wrapper>
+  </mj-body>
+</mjml>

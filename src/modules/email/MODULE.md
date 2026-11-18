@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Sends the e-mails of the service. In this version, ten e-mails, from the Emails artboard of the
+Sends the e-mails of the service. In this version, sixteen e-mails, from the Emails artboard of the
 mockup or new copy in its style:
 
 - "Confirmation de l’adresse" for a code of purpose `email-verification` (sign-up);
@@ -11,7 +11,10 @@ mockup or new copy in its style:
 - "Invitation" for an invitation to join an organization, sent or sent again;
 - the security e-mails of the account events of identity-service: "Réinitialisation du mot de
   passe", "Mot de passe modifié", the notice of a changed address to the previous one (new copy),
-  "Nouvelle connexion", "Suppression du compte" and the notice of a cancelled deletion (new copy).
+  "Nouvelle connexion", "Suppression du compte" and the notice of a cancelled deletion (new copy);
+- the security e-mails of the changes of the two-step verification of an account: "Vérification en
+  deux étapes activée" and, as new copy, its deactivation, a replaced authenticator app,
+  regenerated backup codes, and a security key added or removed.
 
 It owns the send logs of these e-mails, the content of the ones not sent yet, their templates and
 their jobs. It does not own the codes and reset links (identity-service issues, hashes and checks
@@ -25,18 +28,20 @@ None. `EmailModule` is registered by `src/app.module.ts`; no other module import
 
 ## Owned tables
 
-| Table                         | Holds                                                                                                                                                                                                        | Organization scoping                                                                              |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `code_email_deliveries`       | The send log: one row per `one-time-code.issued.v1` event (unique `event_id`), with the code, account and event ids, purpose, validity, status, `sent_at`                                                    | None: an account has no organization. Policy forced: system transactions only                     |
-| `pending_code_emails`         | The code, the address and the cleaned name of a `queued` delivery, deleted when it is settled                                                                                                                | None. Policy forced: system transactions only                                                     |
-| `invitation_email_deliveries` | The send log: one row per `invitation.issued.v1` event (unique `(organization_id, event_id)`), with the event and invitation ids, version, proposed role, language, validity, status, `sent_at`              | `organization_id` of the event, first in its tenant index; organization policy of the kit, forced |
-| `pending_invitation_emails`   | The invited address, the cleaned names of the inviter and of the organization and the member count of a `queued` delivery, deleted when it is settled                                                        | `organization_id` of its delivery; organization policy of the kit, forced                         |
-| `security_email_deliveries`   | The send log: one row per account event (unique `event_id`), with the event and account ids, template, language, send window (`occurred_at`, `send_before`), status, `sent_at`                               | None: an account has no organization. Policy forced: system transactions only                     |
-| `pending_security_emails`     | The address, the cleaned name and the time zone of a `queued` delivery, its `details` (device, IP address, new address, deletion date) and, for a reset e-mail only, its `token`; deleted when it is settled | None. Policy forced: system transactions only                                                     |
+| Table                         | Holds                                                                                                                                                                                                                                                   | Organization scoping                                                                              |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `code_email_deliveries`       | The send log: one row per `one-time-code.issued.v1` event (unique `event_id`), with the code, account and event ids, purpose, validity, status, `sent_at`                                                                                               | None: an account has no organization. Policy forced: system transactions only                     |
+| `pending_code_emails`         | The code, the address and the cleaned name of a `queued` delivery, deleted when it is settled                                                                                                                                                           | None. Policy forced: system transactions only                                                     |
+| `invitation_email_deliveries` | The send log: one row per `invitation.issued.v1` event (unique `(organization_id, event_id)`), with the event and invitation ids, version, proposed role, language, validity, status, `sent_at`                                                         | `organization_id` of the event, first in its tenant index; organization policy of the kit, forced |
+| `pending_invitation_emails`   | The invited address, the cleaned names of the inviter and of the organization and the member count of a `queued` delivery, deleted when it is settled                                                                                                   | `organization_id` of its delivery; organization policy of the kit, forced                         |
+| `security_email_deliveries`   | The send log: one row per account event (unique `event_id`), with the event and account ids, template (none for a change this version has no e-mail for), language, send window (`occurred_at`, `send_before`), status, `sent_at`                       | None: an account has no organization. Policy forced: system transactions only                     |
+| `pending_security_emails`     | The address, the cleaned name and the time zone of a `queued` delivery, its `details` (device, IP address, new address, deletion date, backup codes left, name of a security key) and, for a reset e-mail only, its `token`; deleted when it is settled | None. Policy forced: system transactions only                                                     |
 
 Created by `migrations/0001_code_email_deliveries.sql`,
 `migrations/0002_invitation_email_deliveries.sql` and
-`migrations/0003_security_email_deliveries.sql`. The jobs live in the `pgboss` schema of
+`migrations/0003_security_email_deliveries.sql`;
+`migrations/0004_two_step_security_emails.sql` admits the two-step templates, the reason
+`change-not-supported` and a delivery without template. The jobs live in the `pgboss` schema of
 `@cadenway/nest-jobs`, provisioned by `src/migrate.ts`.
 
 ## API
@@ -49,26 +54,27 @@ None.
 
 ## Events consumed
 
-| Event                             | Stream, consumer                                                                 | Effect                                                                                                                                                                                                                                                                                                     |
-| --------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `one-time-code.issued.v1`         | `EVENTS_RESTRICTED`, `notification-service__request-code-email`, `new`           | `RequestCodeEmail`: records the delivery; for a code still valid, keeps its content and enqueues one job of `email.send-code`, with the template of its purpose (`email-change` goes to the new address); an expired code is recorded `skipped` and nothing is sent                                        |
-| `invitation.issued.v1`            | `EVENTS`, `notification-service__request-invitation-email`, `new`                | `RequestInvitationEmail`: records the delivery in the organization of the event; for the latest version of a valid invitation, keeps its content, skips the older versions still waiting (`superseded`) and enqueues one job of `email.send-invitation`; an expired or older version is recorded `skipped` |
-| `password-reset-link.issued.v1`   | `EVENTS_RESTRICTED`, `notification-service__request-password-reset-email`, `new` | `RequestSecurityEmail` (`password-reset`): records the delivery; for a link still valid, keeps its content and token and enqueues one job of `email.send-security`; an expired link is recorded `skipped`                                                                                                  |
-| `user.password-changed.v1`        | `EVENTS`, `notification-service__request-password-changed-email`, `new`          | `RequestSecurityEmail` (`password-changed`): records the delivery and, within a day of the event, keeps its content and enqueues one job of `email.send-security`                                                                                                                                          |
-| `user.email-changed.v1`           | `EVENTS`, `notification-service__request-email-changed-email`, `new`             | `RequestSecurityEmail` (`email-changed`): the same, to `previousEmail`                                                                                                                                                                                                                                     |
-| `session.opened-on-new-device.v1` | `EVENTS`, `notification-service__request-new-device-email`, `new`                | `RequestSecurityEmail` (`new-device`): the same                                                                                                                                                                                                                                                            |
-| `user.deletion-scheduled.v1`      | `EVENTS`, `notification-service__request-deletion-scheduled-email`, `new`        | `RequestSecurityEmail` (`deletion-scheduled`): the same                                                                                                                                                                                                                                                    |
-| `user.deletion-cancelled.v1`      | `EVENTS`, `notification-service__request-deletion-cancelled-email`, `new`        | `RequestSecurityEmail` (`deletion-cancelled`): the same                                                                                                                                                                                                                                                    |
+| Event                                   | Stream, consumer                                                                 | Effect                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `one-time-code.issued.v1`               | `EVENTS_RESTRICTED`, `notification-service__request-code-email`, `new`           | `RequestCodeEmail`: records the delivery; for a code still valid, keeps its content and enqueues one job of `email.send-code`, with the template of its purpose (`email-change` goes to the new address); an expired code is recorded `skipped` and nothing is sent                                                                                       |
+| `invitation.issued.v1`                  | `EVENTS`, `notification-service__request-invitation-email`, `new`                | `RequestInvitationEmail`: records the delivery in the organization of the event; for the latest version of a valid invitation, keeps its content, skips the older versions still waiting (`superseded`) and enqueues one job of `email.send-invitation`; an expired or older version is recorded `skipped`                                                |
+| `password-reset-link.issued.v1`         | `EVENTS_RESTRICTED`, `notification-service__request-password-reset-email`, `new` | `RequestSecurityEmail` (`password-reset`): records the delivery; for a link still valid, keeps its content and token and enqueues one job of `email.send-security`; an expired link is recorded `skipped`                                                                                                                                                 |
+| `user.password-changed.v1`              | `EVENTS`, `notification-service__request-password-changed-email`, `new`          | `RequestSecurityEmail` (`password-changed`): records the delivery and, within a day of the event, keeps its content and enqueues one job of `email.send-security`                                                                                                                                                                                         |
+| `user.email-changed.v1`                 | `EVENTS`, `notification-service__request-email-changed-email`, `new`             | `RequestSecurityEmail` (`email-changed`): the same, to `previousEmail`                                                                                                                                                                                                                                                                                    |
+| `session.opened-on-new-device.v1`       | `EVENTS`, `notification-service__request-new-device-email`, `new`                | `RequestSecurityEmail` (`new-device`): the same                                                                                                                                                                                                                                                                                                           |
+| `user.deletion-scheduled.v1`            | `EVENTS`, `notification-service__request-deletion-scheduled-email`, `new`        | `RequestSecurityEmail` (`deletion-scheduled`): the same                                                                                                                                                                                                                                                                                                   |
+| `user.deletion-cancelled.v1`            | `EVENTS`, `notification-service__request-deletion-cancelled-email`, `new`        | `RequestSecurityEmail` (`deletion-cancelled`): the same                                                                                                                                                                                                                                                                                                   |
+| `user.two-step-verification-changed.v1` | `EVENTS`, `notification-service__request-two-step-email`, `new`                  | `RequestSecurityEmail` (the template of `change`: `two-step-enabled`, `two-step-disabled`, `authenticator-app-replaced`, `backup-codes-regenerated`, `security-key-added`, `security-key-removed`): the same; a `change` this version does not know is recorded `skipped` (`change-not-supported`), without template, content or job, and nothing is sent |
 
-The six account events are consumed by `AccountSecurityEventsHandler`, one durable consumer each,
-granted by these exact names in cadenway-ops. `password-reset-link.issued.v1` is restricted like
-`one-time-code.issued.v1` below (it is in `RESTRICTED_EVENT_NAMES`): published on
+The seven account events are consumed by `AccountSecurityEventsHandler`, one durable consumer
+each, granted by these exact names in cadenway-ops. `password-reset-link.issued.v1` is restricted
+like `one-time-code.issued.v1` below (it is in `RESTRICTED_EVENT_NAMES`): published on
 `restricted.password-reset-link.issued.v1`, read by this service only, its dead letter without
-body. The five notices are not restricted: they carry no secret, but the address, the name, the
-device and the IP address of the account, which a dead letter keeps 30 days in `EVENTS_DLQ`. The
-operator reads which event failed; the e-mail is not replayed. `deliverPolicy: 'new'` on each: a new
-consumer does not replay the seven days its stream keeps, which would send old security e-mails
-again.
+body. The six notices are not restricted: they carry no secret, but the address, the name, the
+device and the IP address of the account, and the name of a security key, which a dead letter
+keeps 30 days in `EVENTS_DLQ`. The operator reads which event failed; the e-mail is not replayed.
+`deliverPolicy: 'new'` on each: a new consumer does not replay the seven days its stream keeps,
+which would send old security e-mails again.
 
 `one-time-code.issued.v1` is restricted: it is listed in `restrictedEvents`
 (`RESTRICTED_EVENT_NAMES` of `@cadenway/contracts/events/identity-service`), published by
@@ -107,13 +113,18 @@ sends it again; the event is not replayed.
   waits in the `token` column of `pending_security_emails` only (never in `details`), until the
   delivery is settled, and never more than the 5 minutes of a sweep after the link expired.
   `ResetLinkToken` masks itself when converted to a string or serialized. The address, the name,
-  the device and the IP address of a security e-mail never reach a log line, the send log or a job
-  payload either: they wait in `pending_security_emails` only, at most a day and 5 minutes after
-  the event (`SendWindow`, and a check constraint of `security_email_deliveries`).
+  the device, the IP address and the name of a security key of a security e-mail never reach a
+  log line, the send log or a job payload either: they wait in `pending_security_emails` only, at
+  most a day and 5 minutes after the event (`SendWindow`, and a check constraint of
+  `security_email_deliveries`). The handler logs the id of a key added or removed, never its name.
 - A code, a reset link or an invitation whose `expiresAt` has passed is never sent, neither when
   the event arrives nor at a later attempt of its job (contracts of `one-time-code.issued.v1`,
   `password-reset-link.issued.v1` and `invitation.issued.v1`). A security notice is sent within a
   day of its event, or not at all (`skipped`, `expired`).
+- A change of the two-step verification sends the e-mail of its `change`, and one this version does
+  not know sends nothing (contract of `user.two-step-verification-changed.v1`): it is recorded
+  `skipped` for `change-not-supported`, with no template, which a check constraint ties to that
+  reason.
 - One delivery per event: the event id is unique in its send log, so a redelivery the
   deduplicator would not catch enqueues nothing. One job per delivery: its occurrence key is the
   delivery id. A resend of an invitation is a new event, with the next version, and sends again.
@@ -132,8 +143,9 @@ sends it again; the event is not replayed.
   one (cw-email-templates); no preference holds it back yet.
 - The names in an e-mail were typed by people, or read from a `User-Agent` the browser writes: the
   name of the recipient, the names of the inviter and of the organization of an invitation, the
-  browser, the operating system and the IP address of a security e-mail are kept without controls,
-  format characters or line breaks (`greetingName`), and escaped in the HTML part. An e-mail greets
+  browser, the operating system and the IP address of a security e-mail, and the name of a security
+  key, are kept without controls, format characters or line breaks (`greetingName`), and escaped in
+  the HTML part. An e-mail greets
   without a name when nothing is left; an invitation goes to the address alone.
 - A security e-mail repeats the device and the IP address only when they look like what they claim
   to be (`client-text.policy`): a product name of letters, digits and a few signs, no domain and
@@ -141,7 +153,11 @@ sends it again; the event is not replayed.
   ("Navigateur inconnu", "Adresse inconnue"): the reset e-mail can be asked for any address without
   signing in, from a browser that writes its own `User-Agent`, and a genuine e-mail of Cadenway
   must not carry a text an attacker chose, such as a phone number or a domain. An unknown device
-  type reads as `unknown`, as the contract asks.
+  type reads as `unknown`, as the contract asks. For the same reason, the name of a security key is
+  shown only when it looks like the name of a device (`security-key-name.policy`: letters,
+  digits, spaces and a few signs, no domain, six digits at most); otherwise the e-mail names no key
+  ("Une clé de sécurité vient d’être ajoutée"), since whoever holds a session of the account
+  chooses it.
 - A code e-mail of purpose `email-change` goes to the new address the event names. The send log
   may still hold `purpose-not-supported` on such codes recorded before this version: no version
   reads it back.
@@ -156,7 +172,7 @@ sends it again; the event is not replayed.
   claimed version, the delivery, its content, the superseded deliveries and the job commit
   together. `tests/code-email.int-spec.ts` and `tests/invitation-email.int-spec.ts` prove that a
   rollback after the enqueue leaves no delivery, content or job.
-- The six handlers of `AccountSecurityEventsHandler` run in the system transaction of the
+- The seven handlers of `AccountSecurityEventsHandler` run in the system transaction of the
   deduplicator (the events have no organization); `RequestSecurityEmail` joins it through
   `SecurityEmailUnitOfWork`, so the processed id, the delivery, its content and its job commit
   together, or the event is redelivered.
@@ -226,6 +242,18 @@ sends it again; the event is not replayed.
   (to the previous one) and of a cancelled deletion are new copy in the style of "Mot de passe
   modifié". The notice of a changed address offers no link to revert the change: the contract has
   none; it points to the sessions and to the administrator.
+- **Copy of the two-step e-mails.** "Vérification en deux étapes activée" is the template of the
+  artboard with these changes: "codes de secours", the name the interface gives them (Compte ›
+  Sécurité et connexion, the setup dialog), replaces "codes de récupération" in the row, the
+  preheader and the note; the rows "Appareil" and "Adresse IP" join "Méthode", "Codes de secours"
+  ("{n} codes générés", from `backupCodesRemaining`) and "Activée le"; the note adds "Cadenway ne
+  les affichera plus"; a "Ce n’était pas vous ?" paragraph follows, as the contract asks of each
+  two-step e-mail; and the button reads "Gérer la vérification en deux étapes" instead of "Voir
+  mes codes de récupération", since the codes are shown once, when they are generated. The e-mails of
+  `disabled`, `authenticator-app-replaced`, `backup-codes-regenerated` ("{n} codes inutilisés sur
+  10", the wording of the interface), `security-key-added` and `security-key-removed` (naming the
+  key) are new copy in the same frame and tone, with the rows "Appareil", "Adresse IP" and "Date",
+  a "Ce n’était pas vous ?" paragraph and the same button. No subject names a key.
 - **Frame of the security e-mails.** "Sécurité · toujours envoyé", the label of the artboard, in the
   header; "E-mail de sécurité lié à votre compte : il ne peut pas être désactivé." in the footer;
   no `List-Unsubscribe`, since nothing can turn them off. The code e-mails share it.
@@ -242,8 +270,9 @@ sends it again; the event is not replayed.
   `List-Unsubscribe`, the "Ouvrir la page de connexion" button (`/login/code`, the link of the
   mockup), the "Rejoindre" button (`/invite/<invitationId>`, the link the contract of
   `invitation.issued.v1` describes), the reset link (`/reset#token=<token>`), "Sécuriser mon
-  compte" (`/forgot`), "Vérifier mes sessions" (`/account/security`) and "Annuler la suppression"
-  (`/account`), the paths of the artboard and of the contracts.
+  compte" (`/forgot`), "Vérifier mes sessions" and "Gérer la vérification en deux étapes"
+  (`/account/security`) and "Annuler la suppression" (`/account`), the paths of the artboard and
+  of the contracts.
 - **SMTP.** `nodemailer`, one connection per e-mail, 10-second connection and greeting timeouts,
   STARTTLS required as soon as an account is set, no file or URL access, no logger. An SMTP error
   leaves as `EmailNotSentError` with its codes only.
@@ -255,8 +284,9 @@ sends it again; the event is not replayed.
 - **Shared ports.** The invitation and security e-mails reuse the clock, the SMTP sender and the
   rendered-e-mail models of the `code-email` area, and the same `HandlebarsEmailRenderer`
   implements the three renderer ports.
-- **One handler for the account events.** `AccountSecurityEventsHandler` registers the six
+- **One handler for the account events.** `AccountSecurityEventsHandler` registers the seven
   consumers, each mapping its event to `RequestSecurityEmail`: one place logs their outcome with ids
-  only.
+  only. The template of a two-step change is chosen by the domain (`twoStepEmailTemplate`), not by
+  the handler, so that a change this version does not know reaches the use case and is recorded.
 - **Open.** How long the send logs are kept is not decided: their rows hold ids, a purpose, a
   role or a template, a language tag and dates only, and nothing deletes them yet.
