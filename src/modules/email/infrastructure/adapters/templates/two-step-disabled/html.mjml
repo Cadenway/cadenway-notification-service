@@ -1,0 +1,49 @@
+<mjml lang="fr">
+  <mj-head>
+    <mj-include path="../partials/head.mjml" />
+    <mj-preview
+      >Votre compte n’est protégé que par un mot de passe. Ce n’était pas vous ? Agissez
+      vite.</mj-preview
+    >
+  </mj-head>
+  <mj-body background-color="#f2f2f4" width="600px">
+    <mj-wrapper padding="32px 20px">
+      <mj-include path="../partials/security-header.mjml" />
+      <mj-section
+        background-color="#ffffff"
+        border="1px solid #e4e4e7"
+        border-radius="12px"
+        padding="32px"
+      >
+        <mj-column>
+          <mj-text font-size="20px" line-height="28px" font-weight="600" padding="0 0 20px 0">
+            Vérification en deux étapes désactivée
+          </mj-text>
+          <mj-text padding="0 0 20px 0">
+            La vérification en deux étapes de votre compte vient d’être désactivée : votre
+            application d’authentification, vos clés de sécurité et vos codes de secours ont été
+            supprimés, et vos appareils de confiance oubliés. Votre compte n’est protégé que par un
+            mot de passe.
+          </mj-text>
+          <mj-include path="../partials/client-rows.mjml" />
+          <mj-divider border-width="1px" border-color="#e4e4e7" padding="0 0 20px 0" />
+          <mj-text padding="0 0 20px 0">
+            <strong>Ce n’était pas vous ?</strong> Quelqu’un a peut-être accès à votre compte. Si
+            vous êtes encore connecté, changez votre mot de passe, réactivez la vérification en deux
+            étapes et vérifiez vos sessions, puis prévenez l’administrateur de votre organisation.
+          </mj-text>
+          <mj-button
+            href="{{securityUrl}}"
+            align="left"
+            background-color="#ffffff"
+            color="#18181b"
+            border="1px solid #e4e4e7"
+          >
+            Gérer la vérification en deux étapes
+          </mj-button>
+        </mj-column>
+      </mj-section>
+      <mj-include path="../partials/security-footer.mjml" />
+    </mj-wrapper>
+  </mj-body>
+</mjml>

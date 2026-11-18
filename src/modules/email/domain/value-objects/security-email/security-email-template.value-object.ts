@@ -1,3 +1,5 @@
+import type { TwoStepEmailTemplate } from './two-step-email-template.value-object.js';
+
 /**
  * Type SecurityEmailTemplate
  *
@@ -11,9 +13,10 @@
  * - `email-changed`: the notice to the previous address, on `user.email-changed.v1` (new copy);
  * - `new-device`: "Nouvelle connexion", on `session.opened-on-new-device.v1`;
  * - `deletion-scheduled`: "Suppression du compte", on `user.deletion-scheduled.v1`;
- * - `deletion-cancelled`: the cancellation notice, on `user.deletion-cancelled.v1` (new copy).
+ * - `deletion-cancelled`: the cancellation notice, on `user.deletion-cancelled.v1` (new copy);
+ * - the `TwoStepEmailTemplate`s, one per `change` of `user.two-step-verification-changed.v1`.
  *
- * @type {'password-reset' | 'password-changed' | 'email-changed' | 'new-device' | 'deletion-scheduled' | 'deletion-cancelled'}
+ * @type {'password-reset' | 'password-changed' | 'email-changed' | 'new-device' | 'deletion-scheduled' | 'deletion-cancelled' | TwoStepEmailTemplate}
  */
 export type SecurityEmailTemplate =
   | 'password-reset'
@@ -21,4 +24,5 @@ export type SecurityEmailTemplate =
   | 'email-changed'
   | 'new-device'
   | 'deletion-scheduled'
-  | 'deletion-cancelled';
+  | 'deletion-cancelled'
+  | TwoStepEmailTemplate;

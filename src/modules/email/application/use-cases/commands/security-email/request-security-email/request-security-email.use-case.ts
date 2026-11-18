@@ -10,8 +10,12 @@ import {
   noticeWindow,
 } from '../../../../../domain/policies/security-email/security-email.policy.js';
 import type { SecurityEmailDecision } from '../../../../../domain/policies/security-email/security-email-decision.policy.js';
+import { shownSecurityKeyName } from '../../../../../domain/policies/security-email/security-key-name.policy.js';
+import { twoStepEmailTemplate } from '../../../../../domain/policies/security-email/two-step-email.policy.js';
 import { ResetLinkToken } from '../../../../../domain/value-objects/security-email/reset-link-token.value-object.js';
 import type { SecurityEmailSkipReason } from '../../../../../domain/value-objects/security-email/security-email-skip-reason.value-object.js';
+import type { SecurityEmailTemplate } from '../../../../../domain/value-objects/security-email/security-email-template.value-object.js';
+import type { TwoStepEmailTemplate } from '../../../../../domain/value-objects/security-email/two-step-email-template.value-object.js';
 import { SendWindow } from '../../../../../domain/value-objects/security-email/send-window.value-object.js';
 import type { SecurityEmailClient } from '../../../../models/security-email/security-email-client.model.js';
 import type { SecurityEmailDetails } from '../../../../models/security-email/security-email-details.model.js';
@@ -61,17 +65,58 @@ function cleanClient(client: SecurityEmailRequestClient): SecurityEmailClient {
 }
 
 /**
+ * Function twoStepDetailsOf
+ *
+ * @description
+ * The details of the e-mail of a change of the two-step verification, whose template is the one of
+ * its `change` (`twoStepEmailTemplate`): the backup codes not used yet for the e-mails that count
+ * them, the name of the key cleaned and kept only when it looks like the name of a device
+ * (`shownSecurityKeyName`) for the e-mails that name it, the browser cleaned.
+ *
+ * @param {Extract<SecurityEmailRequest, { readonly template: 'two-step-verification-changed' }>} request - The change.
+ * @returns {SecurityEmailDetails | null} The details, or `null` for a change this version has no
+ * e-mail for.
+ */
+function twoStepDetailsOf(
+  request: Extract<SecurityEmailRequest, { readonly template: 'two-step-verification-changed' }>,
+): SecurityEmailDetails | null {
+  const template: TwoStepEmailTemplate | null = twoStepEmailTemplate(request.change);
+  switch (template) {
+    case null:
+      return null;
+    case 'two-step-enabled':
+    case 'backup-codes-regenerated':
+      return {
+        template,
+        backupCodesRemaining: request.backupCodesRemaining,
+        client: cleanClient(request.client),
+      };
+    case 'two-step-disabled':
+    case 'authenticator-app-replaced':
+      return { template, client: cleanClient(request.client) };
+    case 'security-key-added':
+    case 'security-key-removed':
+      return {
+        template,
+        securityKeyName: shownSecurityKeyName(cleaned(request.securityKeyName)),
+        client: cleanClient(request.client),
+      };
+  }
+}
+
+/**
  * Function detailsOf
  *
  * @description
- * The details to keep with the content of the e-mail: the reset token checked and wrapped, the
- * browser cleaned.
+ * The details to keep with the content of the e-mail, whose `template` is the e-mail the event
+ * asks for: the reset token checked and wrapped, the browser cleaned.
  *
  * @param {SecurityEmailRequest} request - What the event asks the e-mail to say.
- * @returns {SecurityEmailDetails} The details.
+ * @returns {SecurityEmailDetails | null} The details, or `null` when the event asks for no e-mail
+ * this version knows.
  * @throws {InvalidResetLinkTokenError} When a reset token is not 32 to 128 URL-safe characters.
  */
-function detailsOf(request: SecurityEmailRequest): SecurityEmailDetails {
+function detailsOf(request: SecurityEmailRequest): SecurityEmailDetails | null {
   switch (request.template) {
     case 'password-reset':
       return {
@@ -97,6 +142,8 @@ function detailsOf(request: SecurityEmailRequest): SecurityEmailDetails {
       return { template: request.template, client: cleanClient(request.client) };
     case 'deletion-scheduled':
       return { template: request.template, deleteAt: new Date(request.deleteAt.getTime()) };
+    case 'two-step-verification-changed':
+      return twoStepDetailsOf(request);
   }
 }
 
@@ -210,7 +257,9 @@ export class RequestSecurityEmail {
    *
    * @description
    * Records the security e-mail of an event, and enqueues it when it is to be sent. The name of the
-   * recipient and the names of the device are kept as `greetingName` cleans them.
+   * recipient, the names of the device and the name of a security key are kept as `greetingName`
+   * cleans them. A change of the two-step verification this version has no e-mail for is recorded
+   * `skipped` for `change-not-supported`, without template, content or job.
    *
    * @param {RequestSecurityEmailInput} input - The event, mapped.
    * @returns {Promise<RequestSecurityEmailOutput>} What became of it, once committed.
@@ -220,8 +269,9 @@ export class RequestSecurityEmail {
    */
   public async execute(input: RequestSecurityEmailInput): Promise<RequestSecurityEmailOutput> {
     const window: SendWindow = windowOf(input.occurredAt, input.request);
-    const details: SecurityEmailDetails = detailsOf(input.request);
-    const decision: SecurityEmailDecision = decideSecurityEmail(window, this.clock.now());
+    const details: SecurityEmailDetails | null = detailsOf(input.request);
+    const template: SecurityEmailTemplate | null = details?.template ?? null;
+    const decision: SecurityEmailDecision = decideSecurityEmail(template, window, this.clock.now());
     const skipReason: SecurityEmailSkipReason | null =
       decision.kind === 'skip' ? decision.reason : null;
 
@@ -230,12 +280,12 @@ export class RequestSecurityEmail {
         {
           eventId: input.eventId,
           userId: input.userId,
-          template: input.request.template,
+          template,
           language: input.language,
           window,
           skipReason,
         },
-        skipReason === null
+        skipReason === null && details !== null
           ? {
               recipientEmail: input.recipient.email,
               recipientName: greetingName(input.recipient.name),

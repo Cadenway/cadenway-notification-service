@@ -36,6 +36,8 @@ describe('shownDeviceName', () => {
 
   it.each([
     'evil.example',
+    'cadenway1.fr',
+    'Support aide2.example',
     'Appelez le 0612345678',
     '06 12 34 56 78',
     'https://phishing',

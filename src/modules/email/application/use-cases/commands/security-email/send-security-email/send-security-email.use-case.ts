@@ -169,7 +169,7 @@ export class SendSecurityEmail {
       throw error;
     }
     await this.unitOfWork.run(() => this.deliveries.markSent(delivery.id));
-    return { outcome: 'sent', template: delivery.template };
+    return { outcome: 'sent', template: content.details.template };
   }
   // #endregion
 }

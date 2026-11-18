@@ -37,12 +37,13 @@ export interface SecurityEmailDeliveryDraft {
    * Property template
    *
    * @description
-   * The e-mail to send.
+   * The e-mail to send; `null` when the event asks for none this version knows (a later `change`
+   * of `user.two-step-verification-changed.v1`), recorded `skipped` for `change-not-supported`.
    *
-   * @type {SecurityEmailTemplate}
+   * @type {SecurityEmailTemplate | null}
    * @readonly
    */
-  readonly template: SecurityEmailTemplate;
+  readonly template: SecurityEmailTemplate | null;
 
   /**
    * Property language

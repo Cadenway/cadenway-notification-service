@@ -234,6 +234,11 @@ configs:
                   "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.notification-service__request-deletion-cancelled-email",
                   "$$JS.ACK.EVENTS.notification-service__request-deletion-cancelled-email.>",
 
+                  "$$JS.API.CONSUMER.CREATE.EVENTS.notification-service__request-two-step-email.evt.user.two-step-verification-changed.v1",
+                  "$$JS.API.CONSUMER.INFO.EVENTS.notification-service__request-two-step-email",
+                  "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.notification-service__request-two-step-email",
+                  "$$JS.ACK.EVENTS.notification-service__request-two-step-email.>",
+
                   "$$JS.API.CONSUMER.CREATE.EVENTS_RESTRICTED.notification-service__request-code-email.restricted.one-time-code.issued.v1",
                   "$$JS.API.CONSUMER.INFO.EVENTS_RESTRICTED.notification-service__request-code-email",
                   "$$JS.API.CONSUMER.MSG.NEXT.EVENTS_RESTRICTED.notification-service__request-code-email",

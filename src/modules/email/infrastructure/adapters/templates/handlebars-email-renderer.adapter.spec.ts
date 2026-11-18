@@ -373,7 +373,64 @@ describe('HandlebarsEmailRenderer', () => {
         deleteAt: new Date('2026-12-09T15:30:00.000Z'),
       },
       'deletion-cancelled': { template: 'deletion-cancelled', client: firefoxOnWindows },
+      'two-step-enabled': {
+        template: 'two-step-enabled',
+        backupCodesRemaining: 10,
+        client: firefoxOnWindows,
+      },
+      'two-step-disabled': { template: 'two-step-disabled', client: firefoxOnWindows },
+      'authenticator-app-replaced': {
+        template: 'authenticator-app-replaced',
+        client: firefoxOnWindows,
+      },
+      'backup-codes-regenerated': {
+        template: 'backup-codes-regenerated',
+        backupCodesRemaining: 10,
+        client: firefoxOnWindows,
+      },
+      'security-key-added': {
+        template: 'security-key-added',
+        securityKeyName: 'YubiKey 5C NFC',
+        client: firefoxOnWindows,
+      },
+      'security-key-removed': {
+        template: 'security-key-removed',
+        securityKeyName: 'YubiKey 5C NFC',
+        client: firefoxOnWindows,
+      },
     };
+
+    /**
+     * Constant FOOTER
+     *
+     * @description
+     * The last lines of the text part of every security e-mail.
+     *
+     * @type {readonly string[]}
+     */
+    const FOOTER: readonly string[] = [
+      '--',
+      'E-mail de sécurité lié à votre compte : il ne peut pas être désactivé.',
+      'Cadenway · 12 rue de la Charité, 69002 Lyon',
+      '',
+    ];
+
+    /**
+     * Constant TWO_STEP_TEMPLATES
+     *
+     * @description
+     * The e-mails of the changes of the two-step verification.
+     *
+     * @type {readonly SecurityEmailTemplate[]}
+     */
+    const TWO_STEP_TEMPLATES: readonly SecurityEmailTemplate[] = [
+      'two-step-enabled',
+      'two-step-disabled',
+      'authenticator-app-replaced',
+      'backup-codes-regenerated',
+      'security-key-added',
+      'security-key-removed',
+    ];
 
     /**
      * Function secure
@@ -407,6 +464,7 @@ describe('HandlebarsEmailRenderer', () => {
       'new-device',
       'deletion-scheduled',
       'deletion-cancelled',
+      ...TWO_STEP_TEMPLATES,
     ])('%s', (template) => {
       it('leaves no variable unrendered', () => {
         const email: RenderedEmail = secure(DETAILS[template]);
@@ -731,6 +789,277 @@ describe('HandlebarsEmailRenderer', () => {
         );
       });
     });
+
+    describe('Vérification en deux étapes activée', () => {
+      it('writes the e-mail of the mockup with "codes de secours", the device and a link that does not promise the codes', () => {
+        const email: RenderedEmail = secure(DETAILS['two-step-enabled'], {
+          occurredAt: new Date('2026-11-09T13:21:00.000Z'),
+        });
+
+        expect(email.subject).toBe('La vérification en deux étapes est activée');
+        expect(preheaderOf(email.html)).toBe(
+          'Gardez vos codes de secours en lieu sûr : ils remplacent votre téléphone.',
+        );
+        expect(email.text).toBe(
+          [
+            'VÉRIFICATION EN DEUX ÉTAPES ACTIVÉE',
+            '',
+            'À chaque connexion, Cadenway vous demandera un code de votre application d’authentification, en plus de votre mot de passe.',
+            '',
+            'Méthode : Application d’authentification',
+            'Codes de secours : 10 codes générés',
+            'Appareil : Firefox sur Windows',
+            'Adresse IP : 192.0.2.14',
+            'Activée le : 9 novembre 2026 à 14:21 (heure de Paris)',
+            '',
+            'Vos codes de secours sont le seul moyen d’accéder au compte si vous perdez votre téléphone. Imprimez-les ou rangez-les dans un gestionnaire de mots de passe : Cadenway ne les affichera plus.',
+            '',
+            '---',
+            '',
+            'Ce n’était pas vous ? Quelqu’un a peut-être accès à votre compte. Si vous êtes encore connecté, vérifiez vos sessions et changez votre mot de passe, puis prévenez l’administrateur de votre organisation.',
+            '',
+            `Gérer la vérification en deux étapes : ${WEB_APP_URL}/account/security`,
+            '',
+            ...FOOTER,
+          ].join('\n'),
+        );
+        const visible: string = visibleTextOf(email.html);
+        expect(visible).toContain('Vérification en deux étapes activée');
+        expect(visible).toContain('Codes de secours 10 codes générés');
+        expect(visible).toContain('Activée le 9 novembre 2026 à 14:21 (heure de Paris)');
+        expect(visible).toContain('Gérer la vérification en deux étapes');
+        expect(visible).not.toContain('récupération');
+        expect(visible).not.toContain('Voir mes codes');
+      });
+    });
+
+    describe('Vérification en deux étapes désactivée', () => {
+      it('says what was deleted and what to do if it was not the person', () => {
+        const email: RenderedEmail = secure(DETAILS['two-step-disabled']);
+
+        expect(email.subject).toBe('La vérification en deux étapes est désactivée');
+        expect(preheaderOf(email.html)).toBe(
+          'Votre compte n’est protégé que par un mot de passe. Ce n’était pas vous ? Agissez vite.',
+        );
+        expect(email.text).toBe(
+          [
+            'VÉRIFICATION EN DEUX ÉTAPES DÉSACTIVÉE',
+            '',
+            'La vérification en deux étapes de votre compte vient d’être désactivée : votre application d’authentification, vos clés de sécurité et vos codes de secours ont été supprimés, et vos appareils de confiance oubliés. Votre compte n’est protégé que par un mot de passe.',
+            '',
+            'Appareil : Firefox sur Windows',
+            'Adresse IP : 192.0.2.14',
+            'Date : 9 novembre 2026 à 14:10 (heure de Paris)',
+            '',
+            '---',
+            '',
+            'Ce n’était pas vous ? Quelqu’un a peut-être accès à votre compte. Si vous êtes encore connecté, changez votre mot de passe, réactivez la vérification en deux étapes et vérifiez vos sessions, puis prévenez l’administrateur de votre organisation.',
+            '',
+            `Gérer la vérification en deux étapes : ${WEB_APP_URL}/account/security`,
+            '',
+            ...FOOTER,
+          ].join('\n'),
+        );
+      });
+    });
+
+    describe('Application d’authentification remplacée', () => {
+      it('says the codes of the previous app no longer work and the backup codes still do', () => {
+        const email: RenderedEmail = secure(DETAILS['authenticator-app-replaced']);
+
+        expect(email.subject).toBe('Votre application d’authentification a été remplacée');
+        expect(preheaderOf(email.html)).toBe(
+          'Seule la nouvelle application est acceptée. Ce n’était pas vous ? Agissez vite.',
+        );
+        expect(email.text).toBe(
+          [
+            'APPLICATION D’AUTHENTIFICATION REMPLACÉE',
+            '',
+            'Une nouvelle application d’authentification vient d’être configurée pour votre compte : les codes de l’ancienne ne sont plus acceptés. Vos codes de secours restent valables.',
+            '',
+            'Appareil : Firefox sur Windows',
+            'Adresse IP : 192.0.2.14',
+            'Date : 9 novembre 2026 à 14:10 (heure de Paris)',
+            '',
+            '---',
+            '',
+            'Ce n’était pas vous ? Quelqu’un a peut-être accès à votre compte. Si vous êtes encore connecté, changez votre mot de passe, reconfigurez votre application et vérifiez vos sessions, puis prévenez l’administrateur de votre organisation.',
+            '',
+            `Gérer la vérification en deux étapes : ${WEB_APP_URL}/account/security`,
+            '',
+            ...FOOTER,
+          ].join('\n'),
+        );
+      });
+    });
+
+    describe('Nouveaux codes de secours', () => {
+      it('counts the backup codes left, as Compte › Sécurité et connexion does', () => {
+        const email: RenderedEmail = secure(DETAILS['backup-codes-regenerated']);
+
+        expect(email.subject).toBe('Vos codes de secours ont été renouvelés');
+        expect(preheaderOf(email.html)).toBe(
+          'Les codes précédents ne fonctionnent plus. Ce n’était pas vous ? Agissez vite.',
+        );
+        expect(email.text).toBe(
+          [
+            'NOUVEAUX CODES DE SECOURS',
+            '',
+            'De nouveaux codes de secours viennent d’être générés pour votre compte : les codes précédents ne fonctionnent plus.',
+            '',
+            'Codes de secours : 10 codes inutilisés sur 10',
+            'Appareil : Firefox sur Windows',
+            'Adresse IP : 192.0.2.14',
+            'Date : 9 novembre 2026 à 14:10 (heure de Paris)',
+            '',
+            'Conservez ces codes de secours hors ligne, imprimés ou dans un gestionnaire de mots de passe : chacun ne sert qu’une fois, et Cadenway ne les affichera plus.',
+            '',
+            '---',
+            '',
+            'Ce n’était pas vous ? Quelqu’un a peut-être accès à votre compte. Si vous êtes encore connecté, générez de nouveaux codes, changez votre mot de passe et vérifiez vos sessions, puis prévenez l’administrateur de votre organisation.',
+            '',
+            `Gérer la vérification en deux étapes : ${WEB_APP_URL}/account/security`,
+            '',
+            ...FOOTER,
+          ].join('\n'),
+        );
+        expect(visibleTextOf(email.html)).toContain('Codes de secours 10 codes inutilisés sur 10');
+      });
+
+      it('counts a lone code in the singular', () => {
+        const email: RenderedEmail = secure({
+          template: 'backup-codes-regenerated',
+          backupCodesRemaining: 1,
+          client: firefoxOnWindows,
+        });
+
+        expect(email.text).toContain('Codes de secours : 1 code inutilisé sur 10');
+      });
+    });
+
+    describe('Clé de sécurité ajoutée', () => {
+      it('names the key that was added and what to do if it was not the person', () => {
+        const email: RenderedEmail = secure(DETAILS['security-key-added']);
+
+        expect(email.subject).toBe('Une clé de sécurité a été ajoutée à votre compte');
+        expect(preheaderOf(email.html)).toBe(
+          'Elle pourra servir dès la prochaine connexion. Ce n’était pas vous ? Agissez vite.',
+        );
+        expect(email.html).toContain('<strong>YubiKey 5C NFC</strong>');
+        expect(email.text).toBe(
+          [
+            'CLÉ DE SÉCURITÉ AJOUTÉE',
+            '',
+            'La clé de sécurité YubiKey 5C NFC vient d’être ajoutée à votre compte : elle pourra servir dès la prochaine connexion.',
+            '',
+            'Appareil : Firefox sur Windows',
+            'Adresse IP : 192.0.2.14',
+            'Date : 9 novembre 2026 à 14:10 (heure de Paris)',
+            '',
+            '---',
+            '',
+            'Ce n’était pas vous ? Quelqu’un a peut-être accès à votre compte. Si vous êtes encore connecté, retirez cette clé, changez votre mot de passe et vérifiez vos sessions, puis prévenez l’administrateur de votre organisation.',
+            '',
+            `Gérer la vérification en deux étapes : ${WEB_APP_URL}/account/security`,
+            '',
+            ...FOOTER,
+          ].join('\n'),
+        );
+      });
+    });
+
+    describe('Clé de sécurité retirée', () => {
+      it('names the key that was removed and what to do if it was not the person', () => {
+        const email: RenderedEmail = secure(DETAILS['security-key-removed']);
+
+        expect(email.subject).toBe('Une clé de sécurité a été retirée de votre compte');
+        expect(preheaderOf(email.html)).toBe(
+          'Elle ne servira plus à vous connecter. Ce n’était pas vous ? Agissez vite.',
+        );
+        expect(email.text).toBe(
+          [
+            'CLÉ DE SÉCURITÉ RETIRÉE',
+            '',
+            'La clé de sécurité YubiKey 5C NFC vient d’être retirée de votre compte : elle ne servira plus à vous connecter.',
+            '',
+            'Appareil : Firefox sur Windows',
+            'Adresse IP : 192.0.2.14',
+            'Date : 9 novembre 2026 à 14:10 (heure de Paris)',
+            '',
+            '---',
+            '',
+            'Ce n’était pas vous ? Quelqu’un a peut-être accès à votre compte. Si vous êtes encore connecté, changez votre mot de passe et vérifiez vos sessions, puis prévenez l’administrateur de votre organisation.',
+            '',
+            `Gérer la vérification en deux étapes : ${WEB_APP_URL}/account/security`,
+            '',
+            ...FOOTER,
+          ].join('\n'),
+        );
+      });
+    });
+
+    describe.each<'security-key-added' | 'security-key-removed'>([
+      'security-key-added',
+      'security-key-removed',
+    ])('%s', (template) => {
+      it('escapes the name of the key in the HTML part only, and keeps it out of the subject', () => {
+        const email: RenderedEmail = secure({
+          template,
+          securityKeyName: '<img src=x onerror=alert(1)> & "Co"',
+          client: firefoxOnWindows,
+        });
+
+        expect(email.html).not.toContain('<img src=x');
+        expect(email.html).toContain(
+          '<strong>&lt;img src&#x3D;x onerror&#x3D;alert(1)&gt; &amp; &quot;Co&quot;</strong>',
+        );
+        expect(email.text).toContain(
+          'La clé de sécurité <img src=x onerror=alert(1)> & "Co" vient',
+        );
+        expect(email.subject).not.toContain('img');
+      });
+
+      it('names no key when the event held no showable name', () => {
+        const email: RenderedEmail = secure({
+          template,
+          securityKeyName: null,
+          client: firefoxOnWindows,
+        });
+
+        expect(email.text).toMatch(
+          /\n\nUne clé de sécurité vient d’être (ajoutée à|retirée de) votre compte/u,
+        );
+        expect(email.html).not.toContain('<strong></strong>');
+        expect(visibleTextOf(email.html)).toMatch(
+          /Une clé de sécurité vient d’être (ajoutée à|retirée de) votre compte/u,
+        );
+      });
+    });
+
+    it.each(TWO_STEP_TEMPLATES)(
+      'links %s to the two-step verification of the account, and nowhere else',
+      (template) => {
+        const email: RenderedEmail = secure(DETAILS[template]);
+
+        expect([...email.html.matchAll(/href="([^"]+)"/gu)].map((match) => match[1])).toEqual([
+          `${WEB_APP_URL}/account/security`,
+        ]);
+      },
+    );
+
+    it.each(TWO_STEP_TEMPLATES)(
+      'dates %s in the time zone of the account, and in Paris when the zone is unknown',
+      (template) => {
+        const label: string = template === 'two-step-enabled' ? 'Activée le' : 'Date';
+
+        expect(secure(DETAILS[template], { timeZone: 'America/New_York' }).text).toContain(
+          `${label} : 9 novembre 2026 à 08:10 (UTC−5)`,
+        );
+        expect(secure(DETAILS[template], { timeZone: 'Mars/Olympus' }).text).toContain(
+          `${label} : 9 novembre 2026 à 14:10 (heure de Paris)`,
+        );
+      },
+    );
 
     it('dates the rows in the time zone of the account, and in Paris when the zone is unknown', () => {
       const newYork: RenderedEmail = secure(DETAILS['deletion-cancelled'], {

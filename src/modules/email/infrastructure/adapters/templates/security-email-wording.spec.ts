@@ -7,8 +7,10 @@ import {
   dayMonthLabel,
   delayLabel,
   deviceLabel,
+  generatedCodesLabel,
   shortDateTimeLabel,
   subjectDevice,
+  unusedCodesLabel,
 } from './security-email-wording.js';
 
 /**
@@ -139,5 +141,19 @@ describe('closedSessionsLabel', () => {
   it('closes nothing for a change from a session, nor for a reset that kept the other sessions', () => {
     expect(closedSessionsLabel('change', 0)).toBe('');
     expect(closedSessionsLabel('reset', 0)).toBe('');
+  });
+});
+
+describe('generatedCodesLabel and unusedCodesLabel', () => {
+  it('count the backup codes as the mockup does: "10 codes générés", "7 codes inutilisés sur 10"', () => {
+    expect(generatedCodesLabel(10)).toBe('10 codes générés');
+    expect(unusedCodesLabel(10)).toBe('10 codes inutilisés sur 10');
+    expect(unusedCodesLabel(7)).toBe('7 codes inutilisés sur 10');
+  });
+
+  it('count fewer than two codes in the singular, as French does', () => {
+    expect(generatedCodesLabel(1)).toBe('1 code généré');
+    expect(unusedCodesLabel(1)).toBe('1 code inutilisé sur 10');
+    expect(unusedCodesLabel(0)).toBe('0 code inutilisé sur 10');
   });
 });

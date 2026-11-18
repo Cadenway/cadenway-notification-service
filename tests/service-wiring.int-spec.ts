@@ -77,7 +77,7 @@ const serviceTables = [
 ] as const;
 
 /** The migrations of the service, all applied by the migrator. */
-const migrationCount = 4;
+const migrationCount = 5;
 
 /**
  * Runs `docker compose` on the throwaway project.

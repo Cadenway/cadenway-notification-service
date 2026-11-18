@@ -33,10 +33,11 @@ const systemAccess: SQL = sql`current_setting('app.system_access', true) = 'on'`
  *
  * `template`, `status` and `skip_reason` follow `SecurityEmailTemplate`,
  * `SecurityEmailDeliveryStatus` and `SecurityEmailSkipReason`; a `skip_reason` exists exactly when
- * the row is `skipped`, a `sent_at` exactly when it is `sent`; the window closes after the event
- * and within a day (`SendWindow`). Its id is the payload and the idempotency key of the job that
- * sends the e-mail. Row-level security is forced by the migration, which drizzle-kit does not
- * generate.
+ * the row is `skipped`, a `sent_at` exactly when it is `sent`; `template` is missing exactly when
+ * the event asked for no e-mail this version knows (`change-not-supported`, a later `change` of
+ * `user.two-step-verification-changed.v1`); the window closes after the event and within a day
+ * (`SendWindow`). Its id is the payload and the idempotency key of the job that sends the e-mail.
+ * Row-level security is forced by the migration, which drizzle-kit does not generate.
  */
 export default pgTable(
   'security_email_deliveries',
@@ -46,7 +47,7 @@ export default pgTable(
       .default(sql`uuidv7()`),
     eventId: uuid('event_id').notNull(),
     userId: uuid('user_id').notNull(),
-    template: text('template').notNull(),
+    template: text('template'),
     language: text('language').notNull(),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
     sendBefore: timestamp('send_before', { withTimezone: true }).notNull(),
@@ -65,7 +66,7 @@ export default pgTable(
       .where(sql`${table.status} = 'queued'`),
     check(
       'security_email_deliveries_template_check',
-      sql`${table.template} in ('password-reset', 'password-changed', 'email-changed', 'new-device', 'deletion-scheduled', 'deletion-cancelled')`,
+      sql`(${table.template} is null) = (${table.skipReason} is not distinct from 'change-not-supported') and (${table.template} is null or ${table.template} in ('password-reset', 'password-changed', 'email-changed', 'new-device', 'deletion-scheduled', 'deletion-cancelled', 'two-step-enabled', 'two-step-disabled', 'authenticator-app-replaced', 'backup-codes-regenerated', 'security-key-added', 'security-key-removed'))`,
     ),
     check(
       'security_email_deliveries_status_check',
@@ -73,7 +74,7 @@ export default pgTable(
     ),
     check(
       'security_email_deliveries_skip_reason_check',
-      sql`(${table.status} = 'skipped') = (${table.skipReason} is not null) and (${table.skipReason} is null or ${table.skipReason} in ('expired'))`,
+      sql`(${table.status} = 'skipped') = (${table.skipReason} is not null) and (${table.skipReason} is null or ${table.skipReason} in ('expired', 'change-not-supported'))`,
     ),
     check(
       'security_email_deliveries_sent_at_check',

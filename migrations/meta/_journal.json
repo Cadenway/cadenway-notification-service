@@ -29,6 +29,13 @@
       "when": 1794942511439,
       "tag": "0003_security_email_deliveries",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794966471969,
+      "tag": "0004_two_step_security_emails",
+      "breakpoints": true
     }
   ]
 }

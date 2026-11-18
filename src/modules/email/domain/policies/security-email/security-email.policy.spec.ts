@@ -72,14 +72,29 @@ describe('noticeWindow', () => {
 
 describe('decideSecurityEmail', () => {
   it('sends while the window is open, whatever the preferences: a security e-mail is always sent', () => {
-    expect(decideSecurityEmail(SendWindow.between(occurredAt, linkExpiresAt), occurredAt)).toEqual({
-      kind: 'send',
-    });
+    expect(
+      decideSecurityEmail(
+        'password-reset',
+        SendWindow.between(occurredAt, linkExpiresAt),
+        occurredAt,
+      ),
+    ).toEqual({ kind: 'send' });
   });
 
   it('skips an e-mail whose window closed, as the contract forbids sending an expired link', () => {
     expect(
-      decideSecurityEmail(SendWindow.between(occurredAt, linkExpiresAt), linkExpiresAt),
+      decideSecurityEmail(
+        'password-reset',
+        SendWindow.between(occurredAt, linkExpiresAt),
+        linkExpiresAt,
+      ),
     ).toEqual({ kind: 'skip', reason: 'expired' });
+  });
+
+  it('skips an event that asks for no e-mail this version knows, even while its window is open', () => {
+    expect(decideSecurityEmail(null, noticeWindow(occurredAt), occurredAt)).toEqual({
+      kind: 'skip',
+      reason: 'change-not-supported',
+    });
   });
 });

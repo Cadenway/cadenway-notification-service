@@ -17,12 +17,13 @@ const systemAccess: SQL = sql`current_setting('app.system_access', true) = 'on'`
 /**
  * What only the e-mail itself shows, for a `queued` security delivery (`pendingSecurityEmails`):
  * the address and the name of the recipient, the time zone of the dates, the details of the
- * template (`details`: the device and the IP address, a new address, a deletion date) and, for the
- * reset e-mail only, the secret of the link (`token`), in a column of its own so that `details`
- * never holds a secret. A row lives from the event until its e-mail is sent, skipped or failed, and
- * not much longer than its window: the sweep deletes the rows whose window closed (`send_before`,
- * indexed). Deleted with its delivery (`on delete cascade`). Row-level security is forced by the
- * migration, which drizzle-kit does not generate.
+ * template (`details`: the device and the IP address, a new address, a deletion date, the backup
+ * codes left, the name of a security key) and, for the reset e-mail only, the secret of the link
+ * (`token`), in a column of its own so that `details` never holds a secret. A row lives from the
+ * event until its e-mail is sent, skipped or failed, and not much longer than its window: the
+ * sweep deletes the rows whose window closed (`send_before`, indexed). Deleted with its delivery
+ * (`on delete cascade`). Row-level security is forced by the migration, which drizzle-kit does not
+ * generate.
  */
 export default pgTable(
   'pending_security_emails',
