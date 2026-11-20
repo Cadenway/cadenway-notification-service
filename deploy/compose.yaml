@@ -9,6 +9,8 @@
 #
 # INTERNAL_TOKEN_TRUSTED_ISSUERS lists who may call this service: the API gateway, and
 # automation-service (its notify action only). The folded scalar gives the service one line of JSON.
+# The optional Identity origin and Notification signer activate activity email together. Provision
+# the matching trust at Identity and the new broker consumer permissions before setting the pair.
 #
 # SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and MAIL_FROM are the outgoing e-mail, each from
 # the variable of the same name in cadenway-ops. WEB_APP_URL, the origin the links of the e-mails
@@ -32,6 +34,8 @@ services:
       INTERNAL_TOKEN_TRUSTED_ISSUERS: >-
         {"api-gateway": [${API_GATEWAY_INTERNAL_TOKEN_PUBLIC_JWKS}],
         "automation-service": [${AUTOMATION_SERVICE_INTERNAL_TOKEN_PUBLIC_JWKS}]}
+      IDENTITY_SERVICE_URL: ${NOTIFICATION_IDENTITY_SERVICE_URL:-}
+      INTERNAL_TOKEN_PRIVATE_JWK: ${NOTIFICATION_SERVICE_INTERNAL_TOKEN_PRIVATE_JWK:-}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
       SMTP_USER: ${SMTP_USER}

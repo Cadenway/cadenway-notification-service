@@ -4,11 +4,13 @@ import { parseEnv } from 'node:util';
 import { ConfigError, loadConfig } from '@cadenway/nest-common';
 import { describe, expect, it } from 'vitest';
 
+import { notificationIdentityTestKey } from '../../tests/support/notification-identity-test-config.js';
 import { appConfigSchema, migrationConfigSchema } from './app-config.js';
 
 describe('appConfigSchema', () => {
   const trustedIssuers: string =
     '{"api-gateway":[{"kty":"OKP","crv":"Ed25519","x":"MVZQc5h6AXxnMpaBTaYw5kI-yWWawl6zp8Srhuf5NK0","kid":"local-placeholder"}]}';
+  const notificationKey = notificationIdentityTestKey();
   const complete: Readonly<Record<string, string>> = {
     PORT: '3016',
     DATABASE_URL: 'postgres://notification_app:notification_app@localhost:5432/notification',
@@ -17,6 +19,8 @@ describe('appConfigSchema', () => {
     NATS_PASSWORD: 'notification',
     INTERNAL_TOKEN_AUDIENCE: 'notification-service',
     INTERNAL_TOKEN_TRUSTED_ISSUERS: trustedIssuers,
+    INTERNAL_TOKEN_PRIVATE_JWK: JSON.stringify(notificationKey),
+    IDENTITY_SERVICE_URL: 'http://identity-service:3010/',
     SMTP_HOST: 'localhost',
     SMTP_PORT: '1025',
     MAIL_FROM: 'no-reply@cadenway.localhost',
@@ -34,6 +38,8 @@ describe('appConfigSchema', () => {
       NATS_USER: 'notification',
       NATS_PASSWORD: 'notification',
       INTERNAL_TOKEN_AUDIENCE: 'notification-service',
+      INTERNAL_TOKEN_PRIVATE_JWK: notificationKey,
+      IDENTITY_SERVICE_URL: 'http://identity-service:3010',
       INTERNAL_TOKEN_TRUSTED_ISSUERS: {
         'api-gateway': [
           {
@@ -61,14 +67,25 @@ describe('appConfigSchema', () => {
     ).toThrow(/DATABASE_TRANSACTION_MAX_ATTEMPTS/u);
   });
 
-  it('accepts the committed .env.example as it is', () => {
+  it('boots with activity delivery dormant using the committed environment example', () => {
     const example: NodeJS.Dict<string> = parseEnv(
       readFileSync(new URL('../../.env.example', import.meta.url), 'utf8'),
     );
 
-    expect(() => loadConfig(appConfigSchema, example)).not.toThrow();
+    const dormant = loadConfig(appConfigSchema, example);
+    expect(dormant.IDENTITY_SERVICE_URL).toBeUndefined();
+    expect(dormant.INTERNAL_TOKEN_PRIVATE_JWK).toBeUndefined();
     expect(() => loadConfig(migrationConfigSchema, example)).not.toThrow();
   });
+
+  it.each(['IDENTITY_SERVICE_URL', 'INTERNAL_TOKEN_PRIVATE_JWK'])(
+    'rejects a partially provisioned runtime without %s',
+    (field) => {
+      expect(() => loadConfig(appConfigSchema, { ...complete, [field]: '' })).toThrow(
+        new RegExp(field, 'u'),
+      );
+    },
+  );
 
   it('refuses to start without the database, the broker, the audience or the trusted issuers', () => {
     expect(() => loadConfig(appConfigSchema, { PORT: '3016' })).toThrow(ConfigError);
@@ -88,6 +105,17 @@ describe('appConfigSchema', () => {
         ]),
       );
     }
+  });
+
+  it.each([
+    'ftp://identity-service:3010',
+    'http://identity-service:3010/internal',
+    'http://identity-service:3010/?token=sentinel',
+    'http://test:sentinel@identity-service:3010',
+  ])('refuses an Identity URL that is not a bare HTTP origin', (url) => {
+    const env = { ...complete, IDENTITY_SERVICE_URL: url };
+    expect(() => loadConfig(appConfigSchema, env)).toThrow(/IDENTITY_SERVICE_URL/u);
+    expect(() => loadConfig(appConfigSchema, env)).not.toThrow(/sentinel/u);
   });
 
   it('refuses a database URL that is not PostgreSQL, without printing it', () => {

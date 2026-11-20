@@ -13,6 +13,7 @@ import { Module } from '@nestjs/common';
 
 import type { AppConfig } from './config/app-config.js';
 import { jobQueues } from './config/job-queues.js';
+import { ActivityDigestsModule } from './modules/activity-digests/activity-digests.module.js';
 import { EmailModule } from './modules/email/email.module.js';
 import { InboxModule } from './modules/inbox/inbox.module.js';
 import { NotificationPreferencesModule } from './modules/notification-preferences/notification-preferences.module.js';
@@ -114,6 +115,7 @@ import { RemindersModule } from './modules/reminders/reminders.module.js';
     PlatformModule,
     EmailModule,
     NotificationPreferencesModule,
+    ActivityDigestsModule,
     InboxModule,
     RemindersModule,
   ],

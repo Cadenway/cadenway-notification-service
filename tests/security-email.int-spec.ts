@@ -446,6 +446,8 @@ describe('security e-mails', () => {
     vi.stubEnv('NATS_USER', 'notification');
     vi.stubEnv('NATS_PASSWORD', 'notification');
     vi.stubEnv('INTERNAL_TOKEN_AUDIENCE', 'notification-service');
+    vi.stubEnv('INTERNAL_TOKEN_PRIVATE_JWK', '');
+    vi.stubEnv('IDENTITY_SERVICE_URL', '');
     vi.stubEnv(
       'INTERNAL_TOKEN_TRUSTED_ISSUERS',
       '{"api-gateway":[{"kty":"OKP","crv":"Ed25519","x":"MVZQc5h6AXxnMpaBTaYw5kI-yWWawl6zp8Srhuf5NK0","kid":"local-placeholder"}]}',

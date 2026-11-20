@@ -77,6 +77,32 @@ function visibleTextOf(html: string): string {
 describe('HandlebarsEmailRenderer', () => {
   let renderer: HandlebarsEmailRenderer;
 
+  it.each([
+    ['en-GB', 2, 'en', 'Your Cadenway activity', '2 new activities', 'Manage notifications'],
+    ['fr-CA', 1, 'fr', 'Votre activité Cadenway', '1 nouvelle activité', 'Gérer mes notifications'],
+    [
+      'de-DE',
+      2,
+      'fr',
+      'Votre activité Cadenway',
+      '2 nouvelles activités',
+      'Gérer mes notifications',
+    ],
+  ])(
+    'renders a generic activity notice for %s',
+    (language, count, locale, subject, summary, footer) => {
+      const notice = renderer.renderActivityNotice(language, count);
+      expect(notice.subject).toBe(subject);
+      expect(notice.html).toContain(`lang="${locale}"`);
+      expect(preheaderOf(notice.html)).toContain(summary);
+      expect(visibleTextOf(notice.html)).toContain(footer);
+      expect(notice.html).toContain(`href="${WEB_APP_URL}/account/notifications"`);
+      expect(notice.html).toContain(`href="${WEB_APP_URL}/home"`);
+      expect(notice.text).toContain(summary);
+      expect(notice.text).toContain(`${footer} : ${WEB_APP_URL}/account/notifications`);
+    },
+  );
+
   /**
    * Function render
    *

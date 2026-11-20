@@ -99,6 +99,9 @@ const platformTables = [
 
 /** Every table owned by this service and the shared messaging platform. */
 const serviceTables = [
+  'activity_email_authorization_attempts',
+  'activity_email_candidates',
+  'activity_email_occurrences',
   'code_email_deliveries',
   'event_versions',
   'idempotency_keys',
@@ -119,7 +122,7 @@ const serviceTables = [
 ] as const;
 
 /** The migrations of the service, all applied by the migrator. */
-const migrationCount = 8;
+const migrationCount = 9;
 
 /**
  * Runs `docker compose` on the throwaway project.
@@ -429,6 +432,8 @@ describe('notification-service wiring', () => {
     vi.stubEnv('NATS_USER', 'notification');
     vi.stubEnv('NATS_PASSWORD', 'notification');
     vi.stubEnv('INTERNAL_TOKEN_AUDIENCE', 'notification-service');
+    vi.stubEnv('INTERNAL_TOKEN_PRIVATE_JWK', '');
+    vi.stubEnv('IDENTITY_SERVICE_URL', '');
     vi.stubEnv(
       'INTERNAL_TOKEN_TRUSTED_ISSUERS',
       JSON.stringify({ 'api-gateway': [gateway.publicJwk] }),
@@ -499,6 +504,27 @@ describe('notification-service wiring', () => {
     expect(journal.rows).toEqual([{ applied: migrationCount }]);
   });
 
+  it('boots with Inbox enabled and activity delivery dormant before Identity trust is provisioned', () => {
+    expect(
+      brokerAccepts(
+        {},
+        'consumer',
+        'info',
+        'EVENTS',
+        'notification-service__inbox-task-delivery-authorized',
+      ),
+    ).toBe(true);
+    expect(
+      brokerAccepts(
+        {},
+        'consumer',
+        'info',
+        'EVENTS',
+        'notification-service__activity-task-delivery-authorized',
+      ),
+    ).toBe(false);
+  });
+
   it('forces row-level security on the tables that carry an organization, a code or personal data', async () => {
     const tables = await migrator.query<{
       relname: string;
@@ -515,6 +541,13 @@ describe('notification-service wiring', () => {
     );
 
     expect(tables.rows).toEqual([
+      {
+        relname: 'activity_email_authorization_attempts',
+        relrowsecurity: true,
+        relforcerowsecurity: true,
+      },
+      { relname: 'activity_email_candidates', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'activity_email_occurrences', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'code_email_deliveries', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'event_versions', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'idempotency_keys', relrowsecurity: true, relforcerowsecurity: true },
@@ -542,6 +575,18 @@ describe('notification-service wiring', () => {
       { relname: 'security_email_deliveries', relrowsecurity: true, relforcerowsecurity: true },
     ]);
     expect(policies.rows).toEqual([
+      {
+        tablename: 'activity_email_authorization_attempts',
+        policyname: 'activity_email_authorization_attempts_tenant_isolation',
+      },
+      {
+        tablename: 'activity_email_candidates',
+        policyname: 'activity_email_candidates_tenant_isolation',
+      },
+      {
+        tablename: 'activity_email_occurrences',
+        policyname: 'activity_email_occurrences_system_access',
+      },
       {
         tablename: 'code_email_deliveries',
         policyname: 'code_email_deliveries_system_access',

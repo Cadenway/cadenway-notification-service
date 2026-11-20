@@ -6,6 +6,7 @@ import type { InvitationEmailMessage } from '../../../application/models/invitat
 import type { InvitationEmailRenderer } from '../../../application/ports/outbound/templates/invitation-email/invitation-email-renderer.port.js';
 import type { SecurityEmailMessage } from '../../../application/models/security-email/security-email-message.model.js';
 import type { SecurityEmailRenderer } from '../../../application/ports/outbound/templates/security-email/security-email-renderer.port.js';
+import type { ActivityNoticeRenderer } from '../../../application/ports/outbound/templates/activity-notice/activity-notice-renderer.port.js';
 import type { CodeEmailTemplate } from '../../../domain/value-objects/code-email/code-email-template.value-object.js';
 import type { SecurityEmailTemplate } from '../../../domain/value-objects/security-email/security-email-template.value-object.js';
 import { invitationEmailContext } from './invitation-email-wording.js';
@@ -102,11 +103,11 @@ interface CompiledEmail {
  * Type TemplateName
  *
  * @description
- * The name of a template folder: the code e-mails, the invitation e-mail and the security e-mails.
+ * The name of a template folder for a code, invitation, security or activity e-mail.
  *
- * @type {CodeEmailTemplate | 'invitation' | SecurityEmailTemplate}
+ * @type {CodeEmailTemplate | 'invitation' | SecurityEmailTemplate | 'activity-notice'}
  */
-type TemplateName = CodeEmailTemplate | 'invitation' | SecurityEmailTemplate;
+type TemplateName = CodeEmailTemplate | 'invitation' | SecurityEmailTemplate | 'activity-notice';
 
 /**
  * Constant TEMPLATES
@@ -133,6 +134,7 @@ const TEMPLATES: readonly TemplateName[] = [
   'backup-codes-regenerated',
   'security-key-added',
   'security-key-removed',
+  'activity-notice',
 ];
 
 /**
@@ -183,11 +185,11 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
  * The French copy is the one of the Emails artboard of the mockup, adapted to a 6-digit code for
  * the code e-mails; the e-mails the artboard lacks (the address-change code, the notice to the
  * previous address, the cancelled deletion, the changes of the two-step verification but its
- * activation) are new copy in its style. Every recipient gets it, whatever the `language` of the
- * event: the mockup has no other language yet.
+ * activation) are new copy in its style. Activity notices have French and English copy, with
+ * French as the default for other account languages.
  */
 export class HandlebarsEmailRenderer
-  implements EmailRenderer, InvitationEmailRenderer, SecurityEmailRenderer
+  implements EmailRenderer, InvitationEmailRenderer, SecurityEmailRenderer, ActivityNoticeRenderer
 {
   // #region Properties
   /**
@@ -327,6 +329,32 @@ export class HandlebarsEmailRenderer
   public renderSecurityEmail(message: SecurityEmailMessage): RenderedEmail {
     return this.render(message.details.template, {
       ...securityEmailContext(message, this.webAppUrl),
+    });
+  }
+
+  /** Uses only a localized count and links to authenticated app pages. */
+  public renderActivityNotice(language: string, count: number): RenderedEmail {
+    const locale = language.toLowerCase().split('-', 1)[0] === 'en' ? 'en' : 'fr';
+    const displayCount = new Intl.NumberFormat(locale).format(count);
+    const wording =
+      locale === 'en'
+        ? {
+            title: 'Your Cadenway activity',
+            preview: `${displayCount} new ${count === 1 ? 'activity' : 'activities'} in Cadenway.`,
+            openLabel: 'Open Cadenway',
+            preferencesLabel: 'Manage notifications',
+          }
+        : {
+            title: 'Votre activité Cadenway',
+            preview: `${displayCount} ${count === 1 ? 'nouvelle activité' : 'nouvelles activités'} dans Cadenway.`,
+            openLabel: 'Ouvrir Cadenway',
+            preferencesLabel: 'Gérer mes notifications',
+          };
+    return this.render('activity-notice', {
+      ...wording,
+      language: locale,
+      appUrl: `${this.webAppUrl}/home`,
+      preferencesUrl: `${this.webAppUrl}/account/notifications`,
     });
   }
 

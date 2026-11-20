@@ -4,6 +4,8 @@ import { Global, Module } from '@nestjs/common';
 import { UpdateNotificationPreferences } from './application/use-cases/commands/preferences/update-notification-preferences/update-notification-preferences.use-case.js';
 import { GetNotificationPreferences } from './application/use-cases/queries/preferences/get-notification-preferences/get-notification-preferences.use-case.js';
 import { IsInAppNotificationEnabled } from './application/use-cases/queries/preferences/is-in-app-notification-enabled/is-in-app-notification-enabled.use-case.js';
+import { ReadActivityPreferences } from './application/use-cases/queries/preferences/read-activity-preferences/read-activity-preferences.use-case.js';
+import { readActivityPreferencesProvider } from './composition/providers/use-cases/preferences/read-activity-preferences.provider.js';
 import { DrizzleInAppNotificationEnabled } from './infrastructure/persistence/drizzle/repositories/preferences/drizzle-in-app-notification-enabled.repository.js';
 import { SystemPreferencesUnitOfWork } from './infrastructure/persistence/drizzle/transactions/preferences/system-preferences.unit-of-work.js';
 import { NotificationPreferencesController } from './presentation/http/controllers/preferences/notification-preferences.controller.js';
@@ -13,6 +15,7 @@ import { NotificationPreferencesController } from './presentation/http/controlle
 @Module({
   controllers: [NotificationPreferencesController],
   providers: [
+    readActivityPreferencesProvider,
     {
       provide: IsInAppNotificationEnabled,
       inject: [TenantTransactionRunner],
@@ -42,6 +45,6 @@ import { NotificationPreferencesController } from './presentation/http/controlle
         new UpdateNotificationPreferences(work),
     },
   ],
-  exports: [IsInAppNotificationEnabled],
+  exports: [IsInAppNotificationEnabled, ReadActivityPreferences],
 })
 export class NotificationPreferencesModule {}

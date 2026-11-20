@@ -2,8 +2,10 @@ import type { eventSchemas } from '@cadenway/contracts/events/task-service';
 import type { EventConsumers, EventContext, EventSubscription } from '@cadenway/nest-messaging';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { InboxActivityDelivery } from '../../../../application/ports/outbound/activity-digests/inbox/inbox-activity-delivery.port.js';
 import type { AcceptInboxDeliveryAuthorization } from '../../../../application/use-cases/commands/inbox/accept-inbox-delivery-authorization/accept-inbox-delivery-authorization.use-case.js';
 import type { StageInboxDeliveries } from '../../../../application/use-cases/commands/inbox/stage-inbox-deliveries/stage-inbox-deliveries.use-case.js';
+import { StageTaskNotificationFact } from '../../../../application/use-cases/commands/inbox/stage-task-notification-fact/stage-task-notification-fact.use-case.js';
 import { TaskInboxEventsHandler } from './task-inbox-events.handler.js';
 
 type EventName = keyof typeof eventSchemas;
@@ -50,10 +52,11 @@ async function harness() {
     },
   } as unknown as EventConsumers;
   const stage = vi.fn<StageInboxDeliveries['execute']>().mockResolvedValue(0);
+  const stageActivity = vi.fn<InboxActivityDelivery['stage']>().mockResolvedValue(1);
   const accept = vi.fn<AcceptInboxDeliveryAuthorization['execute']>().mockResolvedValue(false);
   const handler = new TaskInboxEventsHandler(
     consumers,
-    { execute: stage } as unknown as StageInboxDeliveries,
+    new StageTaskNotificationFact({ execute: stage }, { stage: stageActivity }),
     { execute: accept } as unknown as AcceptInboxDeliveryAuthorization,
   );
   await handler.onApplicationBootstrap();
@@ -76,7 +79,7 @@ async function harness() {
     await subscription.handle(subscription.schemas[event].parse(data), context);
   }
 
-  return { subscriptions, deliver, stage, accept };
+  return { subscriptions, deliver, stage, stageActivity, accept };
 }
 
 describe('TaskInboxEventsHandler', () => {
@@ -98,7 +101,7 @@ describe('TaskInboxEventsHandler', () => {
   });
 
   it('only stages the new assignee and leaves the task title out of the candidate', async () => {
-    const { deliver, stage } = await harness();
+    const { deliver, stage, stageActivity } = await harness();
     await deliver('task.assigned.v1', {
       ...ENVELOPE,
       ...TASK,
@@ -116,6 +119,10 @@ describe('TaskInboxEventsHandler', () => {
       status: null,
     });
     expect(input?.expiresAt).toBeGreaterThan(Date.now());
+    expect(stageActivity).toHaveBeenCalledExactlyOnceWith({
+      source: input?.source,
+      audiences: input?.audiences,
+    });
   });
 
   it('uses only the optional committed watcher audience for a status change', async () => {
@@ -182,7 +189,7 @@ describe('TaskInboxEventsHandler', () => {
   });
 
   it('stages designated reviewers and the requester for their respective approval facts', async () => {
-    const { deliver, stage } = await harness();
+    const { deliver, stage, stageActivity } = await harness();
     const approval = { ...ENVELOPE, ...LOCATION, roundId: LINK_ID };
     await deliver('approval.requested.v1', { ...approval, reviewerUserIds: [CAMILLE] });
     await deliver('approval.decided.v1', {
@@ -196,6 +203,7 @@ describe('TaskInboxEventsHandler', () => {
     expect(requested?.audiences).toEqual([{ kind: 'approval', recipientIds: [CAMILLE] }]);
     expect(decided?.audiences).toEqual([{ kind: 'approval', recipientIds: [LEA] }]);
     expect(decided?.source.commentId).toBe(LINK_ID);
+    expect(stageActivity.mock.calls.map(([input]) => input.audiences)).toEqual([[], []]);
   });
 
   it('uses the exact task request recipients and withholds decisions without an approved link', async () => {
@@ -239,7 +247,7 @@ describe('TaskInboxEventsHandler', () => {
   });
 
   it('passes only a Task system decision to the inbox attempt and propagates cancellation', async () => {
-    const { deliver, accept } = await harness();
+    const { deliver, accept, stageActivity } = await harness();
     const decision = {
       ...ENVELOPE,
       version: 1,
@@ -266,5 +274,6 @@ describe('TaskInboxEventsHandler', () => {
       deliver('task.notification-delivery-authorized.v1', fromTask, AbortSignal.abort(expired)),
     ).rejects.toBe(expired);
     expect(accept).toHaveBeenCalledTimes(1);
+    expect(stageActivity).not.toHaveBeenCalled();
   });
 });
