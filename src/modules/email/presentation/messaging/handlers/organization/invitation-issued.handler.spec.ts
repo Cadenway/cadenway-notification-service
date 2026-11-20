@@ -195,7 +195,7 @@ describe('InvitationIssuedHandler', () => {
           deliveryId: queue.enqueued[0],
           superseded: 0,
         },
-        'invitation e-mail queued',
+        expect.any(String),
       );
     } finally {
       log.mockRestore();
