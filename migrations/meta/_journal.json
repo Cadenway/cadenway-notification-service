@@ -57,6 +57,13 @@
       "when": 1795196804863,
       "tag": "0007_notification_preferences_recipient_read",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795203914267,
+      "tag": "0008_activity_email",
+      "breakpoints": true
     }
   ]
 }

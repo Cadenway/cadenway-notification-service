@@ -1,7 +1,11 @@
+import { CONFIG } from '@cadenway/nest-common';
 import { TenantTransactionRunner } from '@cadenway/nest-common/database';
 import { JobsService } from '@cadenway/nest-jobs';
 import { Module } from '@nestjs/common';
+import type { AppConfig } from '../../config/app-config.js';
 import { RETRY_INBOX_DELIVERY_AUTHORIZATION_QUEUE } from '../../config/job-queues.js';
+import { ActivityDigestsModule } from '../activity-digests/activity-digests.module.js';
+import { StageActivityEmail } from '../activity-digests/public/digest/stage-activity-email.js';
 import { IsInAppNotificationEnabled } from '../notification-preferences/public/preferences/is-in-app-notification-enabled.js';
 
 import { AcceptInboxDeliveryAuthorization } from './application/use-cases/commands/inbox/accept-inbox-delivery-authorization/accept-inbox-delivery-authorization.use-case.js';
@@ -11,6 +15,7 @@ import { ReadCheckedNotification } from './application/use-cases/commands/inbox/
 import { ReadSelectedNotifications } from './application/use-cases/commands/inbox/read-selected-notifications/read-selected-notifications.use-case.js';
 import { RetryInboxDeliveryAuthorization } from './application/use-cases/commands/inbox/retry-inbox-delivery-authorization/retry-inbox-delivery-authorization.use-case.js';
 import { StageInboxDeliveries } from './application/use-cases/commands/inbox/stage-inbox-deliveries/stage-inbox-deliveries.use-case.js';
+import { StageTaskNotificationFact } from './application/use-cases/commands/inbox/stage-task-notification-fact/stage-task-notification-fact.use-case.js';
 import { GetInboxCandidate } from './application/use-cases/queries/inbox/get-inbox-candidate/get-inbox-candidate.use-case.js';
 import { ListInboxCandidates } from './application/use-cases/queries/inbox/list-inbox-candidates/list-inbox-candidates.use-case.js';
 import { ListUnreadSubjects } from './application/use-cases/queries/inbox/list-unread-subjects/list-unread-subjects.use-case.js';
@@ -26,6 +31,7 @@ const INBOX_CANDIDATES_READER: symbol = Symbol('INBOX_CANDIDATES_READER');
 
 /** Composition boundary for the recipient inbox in the selected organization. */
 @Module({
+  imports: [ActivityDigestsModule],
   controllers: [InboxController],
   providers: [
     InboxDeliveryOutbox,
@@ -131,6 +137,21 @@ const INBOX_CANDIDATES_READER: symbol = Symbol('INBOX_CANDIDATES_READER');
                 category: kind === 'status-change' ? 'statusChange' : kind,
               }),
         ),
+    },
+    {
+      provide: StageTaskNotificationFact,
+      inject: [StageInboxDeliveries, StageActivityEmail, CONFIG],
+      useFactory: (
+        stageInbox: StageInboxDeliveries,
+        stageActivity: StageActivityEmail,
+        config: AppConfig,
+      ): StageTaskNotificationFact =>
+        new StageTaskNotificationFact(stageInbox, {
+          stage: (input) =>
+            config.IDENTITY_SERVICE_URL === undefined
+              ? Promise.resolve(0)
+              : stageActivity.execute(input),
+        }),
     },
     TaskInboxEventsHandler,
     {

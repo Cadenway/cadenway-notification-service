@@ -53,6 +53,9 @@ facts and keep their position on restarts. The kit validates each event, dedupli
 and retries failed transactions with its default five deliveries. For a dead letter, inspect the
 consumer and source event ID, correct the cause and replay the source fact if still applicable.
 An elapsed authorization correlation cannot be revived by replaying a decision.
+After validating the same trusted Task facts, this consumer also stages redacted Activity Digest
+candidates independently of the user's in-app preference. The Activity module owns its decision
+durable and email eligibility.
 
 ## Invariants
 

@@ -209,6 +209,11 @@ configs:
                   "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.notification-service__inbox-task-delivery-authorized",
                   "$$JS.ACK.EVENTS.notification-service__inbox-task-delivery-authorized.>",
 
+                  "$$JS.API.CONSUMER.CREATE.EVENTS.notification-service__activity-task-delivery-authorized.evt.task.notification-delivery-authorized.v1",
+                  "$$JS.API.CONSUMER.INFO.EVENTS.notification-service__activity-task-delivery-authorized",
+                  "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.notification-service__activity-task-delivery-authorized",
+                  "$$JS.ACK.EVENTS.notification-service__activity-task-delivery-authorized.>",
+
                   "$$JS.API.CONSUMER.CREATE.EVENTS.notification-service__reminder-task-delivery-authorized.evt.task.notification-delivery-authorized.v1",
                   "$$JS.API.CONSUMER.INFO.EVENTS.notification-service__reminder-task-delivery-authorized",
                   "$$JS.API.CONSUMER.MSG.NEXT.EVENTS.notification-service__reminder-task-delivery-authorized",

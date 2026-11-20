@@ -1,5 +1,13 @@
-import { baseConfigShape, internalTokenVerifierConfigShape } from '@cadenway/nest-common';
-import type { BaseConfig, InternalTokenVerifierConfig } from '@cadenway/nest-common';
+import {
+  baseConfigShape,
+  internalTokenSignerConfigShape,
+  internalTokenVerifierConfigShape,
+} from '@cadenway/nest-common';
+import type {
+  BaseConfig,
+  InternalTokenSignerConfig,
+  InternalTokenVerifierConfig,
+} from '@cadenway/nest-common';
 import { databaseConfigShape } from '@cadenway/nest-common/database';
 import type { DatabaseConfig } from '@cadenway/nest-common/database';
 import { messagingConfigShape } from '@cadenway/nest-messaging';
@@ -26,19 +34,23 @@ import { z } from 'zod';
  *   without them.
  * - `INTERNAL_TOKEN_AUDIENCE` and `INTERNAL_TOKEN_TRUSTED_ISSUERS`: the `aud` this service accepts
  *   and the public keys of the backends allowed to call it.
+ * - `IDENTITY_SERVICE_URL` and `INTERNAL_TOKEN_PRIVATE_JWK`: configure both to bind the Identity
+ *   recipient reader. Both absent keeps activity email dormant. The issuer is `notification-service`.
  *
  * - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` and `WEB_APP_URL`: the
  *   outgoing e-mail, see `EmailConfig`.
  *
  * `OTEL_EXPORTER_OTLP_ENDPOINT` is read by `telemetry.ts`, before the application exists.
  *
- * @type {BaseConfig & DatabaseConfig & MessagingConfig & InternalTokenVerifierConfig & EmailConfig}
  */
 export type AppConfig = BaseConfig &
   DatabaseConfig &
   MessagingConfig &
   InternalTokenVerifierConfig &
-  EmailConfig;
+  Partial<Pick<InternalTokenSignerConfig, 'INTERNAL_TOKEN_PRIVATE_JWK'>> &
+  EmailConfig & {
+    readonly IDENTITY_SERVICE_URL?: string;
+  };
 
 /**
  * Interface EmailConfig
@@ -158,6 +170,19 @@ export const appConfigSchema: z.ZodType<AppConfig> = z
     ...databaseConfigShape,
     ...messagingConfigShape,
     ...internalTokenVerifierConfigShape,
+    INTERNAL_TOKEN_PRIVATE_JWK:
+      internalTokenSignerConfigShape.INTERNAL_TOKEN_PRIVATE_JWK.optional(),
+    IDENTITY_SERVICE_URL: z
+      .url({ protocol: /^https?$/u, error: 'Expected the http:// or https:// origin of Identity.' })
+      .transform((value, context) => {
+        const url = new URL(value);
+        if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+          context.addIssue({ code: 'custom', message: 'Expected the origin of Identity.' });
+          return z.NEVER;
+        }
+        return url.origin;
+      })
+      .optional(),
     SMTP_HOST: z.string().min(1),
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535),
     SMTP_USER: z.string().min(1).optional(),
@@ -169,6 +194,21 @@ export const appConfigSchema: z.ZodType<AppConfig> = z
       .transform((url) => url.replace(/\/+$/u, '')),
   })
   .superRefine((config, context) => {
+    if (
+      (config.IDENTITY_SERVICE_URL === undefined) !==
+      (config.INTERNAL_TOKEN_PRIVATE_JWK === undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: [
+          config.IDENTITY_SERVICE_URL === undefined
+            ? 'IDENTITY_SERVICE_URL'
+            : 'INTERNAL_TOKEN_PRIVATE_JWK',
+        ],
+        message:
+          'IDENTITY_SERVICE_URL and INTERNAL_TOKEN_PRIVATE_JWK are set together or both left unset.',
+      });
+    }
     if ((config.SMTP_USER === undefined) !== (config.SMTP_PASSWORD === undefined)) {
       context.addIssue({
         code: 'custom',

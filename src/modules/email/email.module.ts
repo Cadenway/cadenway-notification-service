@@ -32,6 +32,8 @@ import { sendSecurityEmailProvider } from './composition/providers/use-cases/sec
 import { expireSecurityEmailsProvider } from './composition/providers/use-cases/security-email/expire-security-emails.provider.js';
 import { sendSecurityEmailHandlerProvider } from './composition/providers/adapters/security-email/send-security-email-handler.provider.js';
 import { expireSecurityEmailsHandlerProvider } from './composition/providers/adapters/security-email/expire-security-emails-handler.provider.js';
+import { sendActivityNoticeProvider } from './composition/providers/use-cases/activity-notice/send-activity-notice.provider.js';
+import { SendActivityNotice } from './application/use-cases/commands/activity-notice/send-activity-notice/send-activity-notice.use-case.js';
 
 /**
  * Class EmailModule
@@ -92,6 +94,8 @@ import { expireSecurityEmailsHandlerProvider } from './composition/providers/ada
     AccountSecurityEventsHandler,
     sendSecurityEmailHandlerProvider,
     expireSecurityEmailsHandlerProvider,
+    sendActivityNoticeProvider,
   ],
+  exports: [SendActivityNotice],
 })
 export class EmailModule {}

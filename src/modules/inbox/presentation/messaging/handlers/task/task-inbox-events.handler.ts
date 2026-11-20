@@ -23,7 +23,7 @@ import { z } from 'zod';
 
 import { AcceptInboxDeliveryAuthorization } from '../../../../application/use-cases/commands/inbox/accept-inbox-delivery-authorization/accept-inbox-delivery-authorization.use-case.js';
 import type { StageInboxDeliveriesInput } from '../../../../application/use-cases/commands/inbox/stage-inbox-deliveries/stage-inbox-deliveries.input.js';
-import { StageInboxDeliveries } from '../../../../application/use-cases/commands/inbox/stage-inbox-deliveries/stage-inbox-deliveries.use-case.js';
+import { StageTaskNotificationFact } from '../../../../application/use-cases/commands/inbox/stage-task-notification-fact/stage-task-notification-fact.use-case.js';
 
 const AUTHORIZATION_WINDOW_MS = 30_000;
 const userIdSchema = z.uuid();
@@ -36,10 +36,10 @@ type Details = Pick<StageInboxDeliveriesInput['source'], 'commentId' | 'status'>
 @Injectable()
 export class TaskInboxEventsHandler implements OnApplicationBootstrap {
   // #region Constructor
-  /** Binds the broker consumers and both sides of the inbox authorization transaction. */
+  /** Binds the broker, source audience handoff and Inbox-only decision boundary. */
   public constructor(
     private readonly consumers: EventConsumers,
-    private readonly stageDeliveries: StageInboxDeliveries,
+    private readonly stageDeliveries: StageTaskNotificationFact,
     private readonly acceptAuthorization: AcceptInboxDeliveryAuthorization,
   ) {}
   // #endregion
@@ -134,15 +134,16 @@ export class TaskInboxEventsHandler implements OnApplicationBootstrap {
     details: Partial<Details> = {},
   ): Promise<void> {
     const actorUserId = fact.actor.type === 'user' ? userIdSchema.parse(fact.actor.id) : null;
+    const source = {
+      organizationId: fact.organizationId,
+      sourceEventId: fact.id,
+      actorUserId,
+      taskKey: fact.key,
+      commentId: details.commentId ?? null,
+      status: details.status ?? null,
+    };
     await this.stageDeliveries.execute({
-      source: {
-        organizationId: fact.organizationId,
-        sourceEventId: fact.id,
-        actorUserId,
-        taskKey: fact.key,
-        commentId: details.commentId ?? null,
-        status: details.status ?? null,
-      },
+      source,
       audiences,
       expiresAt: Date.now() + AUTHORIZATION_WINDOW_MS,
     });

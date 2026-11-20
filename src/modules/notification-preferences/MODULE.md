@@ -7,9 +7,11 @@ and security notices belong to the email capability.
 
 ## Public entry points
 
-| Entry point                                         | Consumers |
-| --------------------------------------------------- | --------- |
-| `public/preferences/is-in-app-notification-enabled` | inbox     |
+| Entry point                                         | Consumers        |
+| --------------------------------------------------- | ---------------- |
+| `public/preferences/is-in-app-notification-enabled` | inbox            |
+| `public/preferences/read-activity-preferences`      | activity-digests |
+| notification-preferences.module                     | activity-digests |
 
 ## Owned tables
 
@@ -46,9 +48,12 @@ Serialize writes per account. Validate the version and apply the patch in the sa
 transaction, including the first effective write against the default version.
 Inbox reads one current channel flag in the recipient's delivery transaction, using the same
 account lock as preference updates and a transaction-local, read-only recipient policy.
+Activity Digests reads the account snapshot in its existing system transaction, under that same
+preference lock when it plans or leases an email occurrence. Its source handoff can read one
+recipient in the existing tenant transaction using the read-only policy, restoring that scope
+before returning to the caller.
 
 ## Decisions
 
 Use the settings screen's cadence specified by the P4 contract. Daily digests run on weekdays at
-09:00 and weekly digests run on Mondays at 09:00 in the account's time zone. Digest scheduling and
-delivery require a separate runtime binding.
+09:00 and weekly digests run on Mondays at 09:00 in the account's time zone.

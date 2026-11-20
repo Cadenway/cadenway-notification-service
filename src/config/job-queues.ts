@@ -149,6 +149,12 @@ export const REQUEST_REMINDER_AUTHORIZATION_QUEUE: string = 'reminder.request-au
 export const RETRY_INBOX_DELIVERY_AUTHORIZATION_QUEUE: string =
   'inbox.retry-delivery-authorization';
 
+/** Plans one bounded page of pending activity candidates for an account. */
+export const PLAN_ACTIVITY_EMAIL_QUEUE: string = 'activity.plan-email';
+
+/** Rechecks and dispatches one generation of a scheduled activity email occurrence. */
+export const SEND_ACTIVITY_EMAIL_QUEUE: string = 'activity.send-email';
+
 /**
  * Constant jobQueues
  *
@@ -277,6 +283,27 @@ export const jobQueues: readonly JobQueueDeclaration[] = [
     retryBackoff: true,
     retryDelayMaxSeconds: 120,
     expireInSeconds: 60,
+    retentionSeconds: 86_400,
+    deleteAfterSeconds: 3_600,
+    deadLetterRetentionSeconds: 86_400,
+  },
+  {
+    name: PLAN_ACTIVITY_EMAIL_QUEUE,
+    retryLimit: 4,
+    retryDelaySeconds: 10,
+    retryBackoff: true,
+    retryDelayMaxSeconds: 120,
+    expireInSeconds: 60,
+    retentionSeconds: 86_400,
+    deleteAfterSeconds: 3_600,
+    deadLetterRetentionSeconds: 86_400,
+  },
+  {
+    name: SEND_ACTIVITY_EMAIL_QUEUE,
+    retryLimit: 11,
+    retryDelaySeconds: 5,
+    retryBackoff: false,
+    expireInSeconds: 120,
     retentionSeconds: 86_400,
     deleteAfterSeconds: 3_600,
     deadLetterRetentionSeconds: 86_400,

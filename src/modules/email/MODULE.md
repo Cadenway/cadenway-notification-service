@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Sends the e-mails of the service. In this version, sixteen e-mails, from the Emails artboard of the
+Sends the e-mails of the service. In this version, seventeen e-mails, from the Emails artboard of the
 mockup or new copy in its style:
 
 - "Confirmation de l’adresse" for a code of purpose `email-verification` (sign-up);
@@ -14,7 +14,8 @@ mockup or new copy in its style:
   "Nouvelle connexion", "Suppression du compte" and the notice of a cancelled deletion (new copy);
 - the security e-mails of the changes of the two-step verification of an account: "Vérification en
   deux étapes activée" and, as new copy, its deactivation, a replaced authenticator app,
-  regenerated backup codes, and a security key added or removed.
+  regenerated backup codes, and a security key added or removed;
+- a generic activity notice, with an authorized count and no private task content.
 
 It owns the send logs of these e-mails, the content of the ones not sent yet, their templates and
 their jobs. It does not own the codes and reset links (identity-service issues, hashes and checks
@@ -24,7 +25,13 @@ with later phases.
 
 ## Public entry points
 
-None. `EmailModule` is registered by `src/app.module.ts`; no other module imports it.
+| Entry point                                   | Consumers        |
+| --------------------------------------------- | ---------------- |
+| `email.module`                                | activity-digests |
+| `public/activity-notice/send-activity-notice` | activity-digests |
+
+`EmailModule` exports `SendActivityNotice` for the activity delivery job. Activity Digests
+owns preferences and current authorization checks, and records the send outcome.
 
 ## Owned tables
 
@@ -139,8 +146,8 @@ sends it again; the event is not replayed.
 - The code e-mails and the account e-mails are security e-mails ("Sécurité · toujours envoyé"):
   always sent, whatever the preferences, in French whatever the language of the event, and with no
   `List-Unsubscribe` header nor link, since they cannot be turned off. The invitation e-mail
-  carries `List-Unsubscribe` and `List-Unsubscribe-Post`, as every e-mail that is not a security
-  one (cw-email-templates); no preference holds it back yet.
+  retains its existing headers. The activity notice links to notification preferences, where the
+  recipient can turn activity emails off.
 - The names in an e-mail were typed by people, or read from a `User-Agent` the browser writes: the
   name of the recipient, the names of the inviter and of the organization of an invitation, the
   browser, the operating system and the IP address of a security e-mail, and the name of a security
@@ -199,6 +206,13 @@ sends it again; the event is not replayed.
   e-mails whose window closed.
 
 ## Decisions
+
+- **Activity notice.** The generic subject accompanies an authorized count and authenticated app
+  links. French follows the style of the Emails artboard. English follows the current account's
+  language tag, with French for other languages. The message is built in memory and sent using an
+  occurrence-derived Message-ID before the authorization expires. The notification preferences
+  footer opens the account settings page. There is no direct unsubscribe endpoint for activity
+  notices, so they advertise no automated unsubscribe action.
 
 - **Templates.** Each template folder holds `html.mjml`, `text.hbs` and `subject.hbs`.
   `scripts/build-email-templates.mjs` compiles the MJML with `mjml-core` and `mjml-preset-core`
