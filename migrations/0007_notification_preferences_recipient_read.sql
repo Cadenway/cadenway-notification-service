@@ -1,0 +1,1 @@
+CREATE POLICY "notification_preferences_recipient_read" ON "notification_preferences" AS PERMISSIVE FOR SELECT TO public USING (nullif(current_setting('app.organization_id', true), '') is not null and "notification_preferences"."user_id" = nullif(current_setting('app.notification_recipient_id', true), '')::uuid);

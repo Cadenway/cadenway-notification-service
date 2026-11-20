@@ -60,6 +60,12 @@ no tenant transaction can read it. `code_email_deliveries` and `pending_code_ema
 module are the first; `tests/code-email.int-spec.ts` checks that a tenant transaction sees none of
 their rows.
 
+Notification preferences also admit a tenant SELECT for one authorized Inbox recipient. The
+preferences reader takes the account lock, sets `app.notification_recipient_id` locally in the
+active tenant transaction, reads by that account's primary key and clears the setting. Only the
+verified recipient of the locked delivery attempt supplies this identifier. The system policy
+still governs writes and the regular account read. Email delivery tables remain system-only.
+
 ## Not there yet
 
 The two roles exist in cadenway-ops (`docs/database.md` there) and in `compose.dev.yaml`;

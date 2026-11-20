@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+
+import { OwnerStateUnavailableInterceptor } from './infrastructure/adapters/http/owner-state-unavailable.interceptor.js';
 
 /**
  * Class PlatformModule
@@ -10,9 +13,8 @@ import { Module } from '@nestjs/common';
  * so that drizzle-kit, which reads `src/modules/<module>/infrastructure/persistence/*.schema.ts`
  * only, writes them into the migrations of the service.
  *
- * It declares no provider, controller or handler and holds no business rule: what reads and writes
- * the tables is the kit, through `DatabaseModule`, `MessagingModule` and `OutboxModule`, registered
- * in `AppModule`. See its `MODULE.md`.
+ * A global HTTP interceptor maps recognized database availability failures to the documented
+ * owner-state problem. The tables are used through the shared kit modules in `AppModule`.
  */
-@Module({})
+@Module({ providers: [{ provide: APP_INTERCEPTOR, useClass: OwnerStateUnavailableInterceptor }] })
 export class PlatformModule {}

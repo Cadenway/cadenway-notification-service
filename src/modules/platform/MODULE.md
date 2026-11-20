@@ -16,8 +16,8 @@ the kit, through `DatabaseModule`, `MessagingModule` and `OutboxModule` register
 
 ## Public entry points
 
-None. No module imports this one: the kit reads and writes the tables by name, through the
-transaction runners.
+None. The globally registered HTTP interceptor maps recognized database availability failures to
+the owner-state problem. The kit reads and writes platform tables through its transaction runners.
 
 ## Owned tables
 
