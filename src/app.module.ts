@@ -14,7 +14,10 @@ import { Module } from '@nestjs/common';
 import type { AppConfig } from './config/app-config.js';
 import { jobQueues } from './config/job-queues.js';
 import { EmailModule } from './modules/email/email.module.js';
+import { InboxModule } from './modules/inbox/inbox.module.js';
+import { NotificationPreferencesModule } from './modules/notification-preferences/notification-preferences.module.js';
 import { PlatformModule } from './modules/platform/platform.module.js';
+import { RemindersModule } from './modules/reminders/reminders.module.js';
 
 /**
  * Class AppModule
@@ -44,8 +47,8 @@ import { PlatformModule } from './modules/platform/platform.module.js';
  *   body may hold a single-use code or a reset token, which would otherwise stay 30 days in
  *   `EVENTS_DLQ`. `restrictedEvents` lists `RESTRICTED_EVENT_NAMES` of the identity-service events
  *   of `@cadenway/contracts` (`one-time-code.issued.v1`, `password-reset-link.issued.v1`): their
- *   consumers read `EVENTS_RESTRICTED` on `restricted.<name>`. The service publishes nothing yet: `@cadenway/contracts` defines no event
- *   of its own.
+ *   consumers read `EVENTS_RESTRICTED` on `restricted.<name>`. Inbox publishes redacted
+ *   delivery authorization requests and notification-created facts on `EVENTS`.
  * - `OutboxModule`: the outbox writer, the PostgreSQL deduplicator and the relay, which polls
  *   `outbox_events` every second in a system transaction and publishes the pending rows. It runs in
  *   every replica; `for update skip locked` keeps two of them from publishing the same row.
@@ -110,6 +113,9 @@ import { PlatformModule } from './modules/platform/platform.module.js';
     }),
     PlatformModule,
     EmailModule,
+    NotificationPreferencesModule,
+    InboxModule,
+    RemindersModule,
   ],
 })
 export class AppModule {}

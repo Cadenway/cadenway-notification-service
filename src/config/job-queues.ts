@@ -142,6 +142,13 @@ export const EXPIRE_SECURITY_EMAILS_QUEUE: string = 'email.expire-security';
  */
 export const EXPIRE_SECURITY_EMAILS_CRON: string = '*/5 * * * *';
 
+/** Queue for the authorization check of a specific personal reminder schedule. */
+export const REQUEST_REMINDER_AUTHORIZATION_QUEUE: string = 'reminder.request-authorization';
+
+/** Queue for an Inbox authorization watchdog tied to one opaque correlation. */
+export const RETRY_INBOX_DELIVERY_AUTHORIZATION_QUEUE: string =
+  'inbox.retry-delivery-authorization';
+
 /**
  * Constant jobQueues
  *
@@ -249,6 +256,28 @@ export const jobQueues: readonly JobQueueDeclaration[] = [
     retryBackoff: false,
     expireInSeconds: 60,
     retentionSeconds: 900,
+    deleteAfterSeconds: 3_600,
+    deadLetterRetentionSeconds: 86_400,
+  },
+  {
+    name: RETRY_INBOX_DELIVERY_AUTHORIZATION_QUEUE,
+    retryLimit: 4,
+    retryDelaySeconds: 10,
+    retryBackoff: true,
+    retryDelayMaxSeconds: 120,
+    expireInSeconds: 60,
+    retentionSeconds: 86_400,
+    deleteAfterSeconds: 3_600,
+    deadLetterRetentionSeconds: 86_400,
+  },
+  {
+    name: REQUEST_REMINDER_AUTHORIZATION_QUEUE,
+    retryLimit: 4,
+    retryDelaySeconds: 10,
+    retryBackoff: true,
+    retryDelayMaxSeconds: 120,
+    expireInSeconds: 60,
+    retentionSeconds: 86_400,
     deleteAfterSeconds: 3_600,
     deadLetterRetentionSeconds: 86_400,
   },

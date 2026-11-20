@@ -17,7 +17,7 @@ paths:
   direct NATS client.
 - Handlers deduplicate on the event id and call a use case; they never write another service's data.
 - A shape change is a new version; the old one keeps being emitted until every consumer moved.
-- Events emitted by this service: `notification.created`, `reminder.due`.
+- Events emitted by this service: `notification.created`, `notification.delivery-authorization-requested`, `reminder.due`.
 
 ## Review example
 

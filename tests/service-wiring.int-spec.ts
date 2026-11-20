@@ -1,8 +1,19 @@
 import { execFileSync } from 'node:child_process';
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
+import { reminderDueV1Schema } from '@cadenway/contracts/events/notification-service';
+import {
+  taskAssignedV1Schema,
+  taskNotificationDeliveryAuthorizedV1Schema,
+} from '@cadenway/contracts/events/task-service';
+import {
+  GetTaskReminderInternalResponse,
+  ListInboxNotificationsInternalResponse,
+  SetTaskReminderInternalResponse,
+  UpdateNotificationPreferencesInternalResponse,
+} from '@cadenway/contracts/validators/internal/notification-service';
 import {
   createApplication,
   InternalTokenSigner,
@@ -14,16 +25,40 @@ import type {
   Ed25519PublicJwk,
   OrganizationContext,
 } from '@cadenway/nest-common';
-import { SystemTransactionRunner, TenantTransactionRunner } from '@cadenway/nest-common/database';
+import {
+  DATABASE_POOL,
+  SystemTransactionRunner,
+  TenantTransactionRunner,
+} from '@cadenway/nest-common/database';
+import type { DatabaseSchema, TransactionScope } from '@cadenway/nest-common/database';
 import { Controller, Get, Injectable, Module } from '@nestjs/common';
 import type { BeforeApplicationShutdown } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import pg from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 import { AppModule } from '../src/app.module.js';
 import { appConfigSchema } from '../src/config/app-config.js';
+import type { InboxAuthorizationAttempt } from '../src/modules/inbox/application/models/inbox/inbox-authorization-attempt.model.js';
+import { InboxGenerationChanged } from '../src/modules/inbox/application/models/inbox/inbox-generation-changed.model.js';
+import { AcceptInboxDeliveryAuthorization } from '../src/modules/inbox/application/use-cases/commands/inbox/accept-inbox-delivery-authorization/accept-inbox-delivery-authorization.use-case.js';
+import { StageInboxDeliveries } from '../src/modules/inbox/application/use-cases/commands/inbox/stage-inbox-deliveries/stage-inbox-deliveries.use-case.js';
+import { DrizzleInboxDeliveryUnitOfWork } from '../src/modules/inbox/infrastructure/persistence/drizzle/transactions/inbox/drizzle-inbox-delivery.unit-of-work.js';
+import { InboxNotification } from '../src/modules/inbox/domain/aggregates/inbox/inbox-notification.aggregate.js';
+import { DrizzleInboxRecords } from '../src/modules/inbox/infrastructure/persistence/drizzle/repositories/inbox/drizzle-inbox-records.repository.js';
+import { DrizzleInboxRecordsUnitOfWork } from '../src/modules/inbox/infrastructure/persistence/drizzle/transactions/inbox/drizzle-inbox-records.unit-of-work.js';
+import { UpdateNotificationPreferences } from '../src/modules/notification-preferences/application/use-cases/commands/preferences/update-notification-preferences/update-notification-preferences.use-case.js';
+import { GetNotificationPreferences } from '../src/modules/notification-preferences/application/use-cases/queries/preferences/get-notification-preferences/get-notification-preferences.use-case.js';
+import { SystemPreferencesUnitOfWork } from '../src/modules/notification-preferences/infrastructure/persistence/drizzle/transactions/preferences/system-preferences.unit-of-work.js';
+import { Reminder } from '../src/modules/reminders/domain/aggregates/reminder/reminder.aggregate.js';
+import { ReminderGenerationChanged } from '../src/modules/reminders/application/models/reminder/reminder-generation-changed.model.js';
+import { DrizzleReminderRecords } from '../src/modules/reminders/infrastructure/persistence/drizzle/repositories/reminder/drizzle-reminder-records.repository.js';
+import { DrizzleReminderCandidatesReader } from '../src/modules/reminders/infrastructure/persistence/drizzle/repositories/reminder/drizzle-reminder-candidates.repository.js';
+import { DrizzleRemindersUnitOfWork } from '../src/modules/reminders/infrastructure/persistence/drizzle/transactions/reminder/drizzle-reminders.unit-of-work.js';
+import { SetTaskReminder } from '../src/modules/reminders/application/use-cases/commands/reminder/set-task-reminder/set-task-reminder.use-case.js';
+import { GetTaskReminder } from '../src/modules/reminders/application/use-cases/queries/reminder/get-task-reminder/get-task-reminder.use-case.js';
 
 // The service as main.ts assembles it, on a disposable PostgreSQL and NATS.
 // `@cadenway/nest-testing` does not export its container fixtures yet and a service never depends
@@ -62,22 +97,29 @@ const platformTables = [
   'processed_events',
 ] as const;
 
-/** Every table of the service: the platform tables and those of the email module. */
+/** Every table owned by this service and the shared messaging platform. */
 const serviceTables = [
   'code_email_deliveries',
   'event_versions',
   'idempotency_keys',
+  'inbox_delivery_authorization_attempts',
+  'inbox_generations',
+  'inbox_notifications',
   'invitation_email_deliveries',
+  'notification_preferences',
   'outbox_events',
   'pending_code_emails',
   'pending_invitation_emails',
   'pending_security_emails',
   'processed_events',
+  'reminder_authorization_attempts',
+  'reminder_generations',
+  'reminders',
   'security_email_deliveries',
 ] as const;
 
 /** The migrations of the service, all applied by the migrator. */
-const migrationCount = 5;
+const migrationCount = 8;
 
 /**
  * Runs `docker compose` on the throwaway project.
@@ -252,6 +294,40 @@ function memberOf(organizationId: string): OrganizationContext {
     role: null,
     scopes: [],
   };
+}
+
+/** Stages a synthetic authorization envelope on the genuine transactional outbox table. */
+async function writeInboxProbe(
+  scope: TransactionScope,
+  name: string,
+  payload: Readonly<Record<string, unknown>>,
+): Promise<void> {
+  await scope.client.query(
+    `insert into outbox_events
+       (id, event_name, subject, stream, organization_id, payload, status, sent_at)
+     values (uuidv7(), $1, 'evt.' || $1, 'EVENTS', $2, $3::jsonb, 'sent', now())`,
+    [name, scope.organizationId, JSON.stringify(payload)],
+  );
+}
+
+/** Records the locked probe correlation without registering an unpublished event. */
+function writeInboxAuthorizationProbe(
+  scope: TransactionScope,
+  attempt: InboxAuthorizationAttempt,
+): Promise<void> {
+  return writeInboxProbe(scope, 'notification.inbox-authorization-test.v1', {
+    authorizationRequestId: attempt.id,
+    sourceEventId: attempt.candidate.sourceEventId,
+  });
+}
+
+/** Reads a required string column from the raw transaction-client probe. */
+function inboxProbeField(row: unknown, column: string): string {
+  if (typeof row === 'object' && row !== null && column in row) {
+    const value = (row as Record<string, unknown>)[column];
+    if (typeof value === 'string') return value;
+  }
+  throw new Error(`Inbox authorization probe did not return ${column}.`);
 }
 
 /**
@@ -442,12 +518,27 @@ describe('notification-service wiring', () => {
       { relname: 'code_email_deliveries', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'event_versions', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'idempotency_keys', relrowsecurity: true, relforcerowsecurity: true },
+      {
+        relname: 'inbox_delivery_authorization_attempts',
+        relrowsecurity: true,
+        relforcerowsecurity: true,
+      },
+      { relname: 'inbox_generations', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'inbox_notifications', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'invitation_email_deliveries', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'notification_preferences', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'outbox_events', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'pending_code_emails', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'pending_invitation_emails', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'pending_security_emails', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'processed_events', relrowsecurity: false, relforcerowsecurity: false },
+      {
+        relname: 'reminder_authorization_attempts',
+        relrowsecurity: true,
+        relforcerowsecurity: true,
+      },
+      { relname: 'reminder_generations', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'reminders', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'security_email_deliveries', relrowsecurity: true, relforcerowsecurity: true },
     ]);
     expect(policies.rows).toEqual([
@@ -458,8 +549,25 @@ describe('notification-service wiring', () => {
       { tablename: 'event_versions', policyname: 'event_versions_organization_isolation' },
       { tablename: 'idempotency_keys', policyname: 'idempotency_keys_organization_isolation' },
       {
+        tablename: 'inbox_delivery_authorization_attempts',
+        policyname: 'inbox_delivery_attempts_organization_isolation',
+      },
+      { tablename: 'inbox_generations', policyname: 'inbox_generations_organization_isolation' },
+      {
+        tablename: 'inbox_notifications',
+        policyname: 'inbox_notifications_organization_isolation',
+      },
+      {
         tablename: 'invitation_email_deliveries',
         policyname: 'invitation_email_deliveries_organization_isolation',
+      },
+      {
+        tablename: 'notification_preferences',
+        policyname: 'notification_preferences_recipient_read',
+      },
+      {
+        tablename: 'notification_preferences',
+        policyname: 'notification_preferences_system_access',
       },
       { tablename: 'outbox_events', policyname: 'outbox_events_organization_isolation' },
       { tablename: 'pending_code_emails', policyname: 'pending_code_emails_system_access' },
@@ -468,6 +576,15 @@ describe('notification-service wiring', () => {
         policyname: 'pending_invitation_emails_organization_isolation',
       },
       { tablename: 'pending_security_emails', policyname: 'pending_security_emails_system_access' },
+      {
+        tablename: 'reminder_authorization_attempts',
+        policyname: 'reminder_authorization_attempts_organization_isolation',
+      },
+      {
+        tablename: 'reminder_generations',
+        policyname: 'reminder_generations_organization_isolation',
+      },
+      { tablename: 'reminders', policyname: 'reminders_organization_isolation' },
       {
         tablename: 'security_email_deliveries',
         policyname: 'security_email_deliveries_system_access',
@@ -530,6 +647,551 @@ describe('notification-service wiring', () => {
       details: { reason: 'audience' },
     });
   });
+
+  it('fires a scheduled reminder once after a timely Task permit', async () => {
+    const testOrganizationId = randomUUID();
+    const tenant = service().get(TenantTransactionRunner);
+    const inTenant = <T>(
+      work: (scope: TransactionScope<DatabaseSchema>) => Promise<T>,
+    ): Promise<T> =>
+      runWithOrganizationContext(memberOf(testOrganizationId), () => tenant.run(work));
+    const taskId = randomUUID();
+    const canceledTaskId = randomUUID();
+    const note = 'Préparer la revue du sprint 14';
+    const remindAt = new Date(Date.now() + 8_000).toISOString();
+    const token = await signer.sign('notification-service', {
+      actor: { type: 'user', id: camilleMartinId },
+      organizationId: testOrganizationId,
+    });
+    const scheduled = await request(service().getHttpServer())
+      .put(`/internal/v1/tasks/${taskId}/reminder`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ remindAt, note });
+    expect(scheduled.status).toBe(201);
+    const reminder = SetTaskReminderInternalResponse.parse(scheduled.body);
+    expect(reminder).toMatchObject({ taskId, remindAt, note, firedAt: null, version: 1 });
+
+    const canceled = await request(service().getHttpServer())
+      .put(`/internal/v1/tasks/${canceledTaskId}/reminder`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ remindAt, note });
+    expect(canceled.status).toBe(201);
+    const canceledReminder = SetTaskReminderInternalResponse.parse(canceled.body);
+    const removed = await request(service().getHttpServer())
+      .delete(`/internal/v1/reminders/${canceledReminder.id}`)
+      .query({ authorizedTaskId: canceledTaskId })
+      .set('Authorization', `Bearer ${token}`);
+    expect(removed.status).toBe(204);
+
+    expect(Date.now()).toBeLessThan(Date.parse(remindAt));
+    const beforeDue = await inTenant((scope) =>
+      scope.client.query(
+        `select count(*)::int as count from outbox_events
+         where event_name = 'reminder.due.v1' and payload->>'reminderId' = $1`,
+        [reminder.id],
+      ),
+    );
+    expect(beforeDue.rows).toEqual([{ count: 0 }]);
+
+    let attempt: { id: string; expires_at: Date } | undefined;
+    await vi.waitFor(
+      async () => {
+        const result = await inTenant((scope) =>
+          scope.client.query(
+            `select attempt.id, attempt.expires_at
+             from reminder_authorization_attempts attempt
+             join outbox_events outbox on outbox.organization_id = attempt.organization_id
+               and outbox.payload->>'authorizationRequestId' = attempt.id::text
+             where attempt.reminder_id = $1
+               and outbox.event_name = 'notification.delivery-authorization-requested.v1'
+               and outbox.status = 'sent'`,
+            [reminder.id],
+          ),
+        );
+        expect(result.rows).toHaveLength(1);
+        attempt = z.object({ id: z.uuid(), expires_at: z.date() }).parse(result.rows[0]);
+      },
+      { timeout: 35_000, interval: 200 },
+    );
+    if (attempt === undefined) throw new Error('The scheduled authorization was not recorded.');
+    const decision = taskNotificationDeliveryAuthorizedV1Schema.parse({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      organizationId: testOrganizationId,
+      actor: { type: 'system', id: 'task-service' },
+      version: 1,
+      authorizationRequestId: attempt.id,
+      decision: 'permit',
+      validUntil: attempt.expires_at.toISOString(),
+    });
+    asAdmin(
+      'pub',
+      '--jetstream',
+      'evt.task.notification-delivery-authorized.v1',
+      JSON.stringify(decision),
+    );
+
+    await vi.waitFor(
+      async () => {
+        const result = await inTenant((scope) =>
+          scope.client.query(
+            `select payload, status from outbox_events
+             where event_name = 'reminder.due.v1' and payload->>'reminderId' = $1`,
+            [reminder.id],
+          ),
+        );
+        expect(result.rows).toHaveLength(1);
+        const row = z.object({ payload: z.unknown(), status: z.string() }).parse(result.rows[0]);
+        expect(row.status).toBe('sent');
+        const fact = reminderDueV1Schema.parse(row.payload);
+        expect(fact).toMatchObject({
+          organizationId: testOrganizationId,
+          reminderId: reminder.id,
+          userId: camilleMartinId,
+          taskId,
+          version: 2,
+        });
+        expect(Object.keys(fact).sort()).toEqual(
+          [
+            'actor',
+            'id',
+            'occurredAt',
+            'organizationId',
+            'reminderId',
+            'taskId',
+            'userId',
+            'version',
+          ].sort(),
+        );
+        expect(Date.parse(fact.occurredAt)).toBeGreaterThanOrEqual(Date.parse(remindAt));
+      },
+      { timeout: 15_000, interval: 200 },
+    );
+
+    const replay = { ...decision, id: randomUUID(), occurredAt: new Date().toISOString() };
+    asAdmin(
+      'pub',
+      '--jetstream',
+      'evt.task.notification-delivery-authorized.v1',
+      JSON.stringify(replay),
+    );
+    await vi.waitFor(
+      async () => {
+        const processed = await migrator.query<{ count: number }>(
+          `select count(*)::int as count from processed_events
+           where consumer = 'notification-service__reminder-task-delivery-authorized' and event_id = $1`,
+          [replay.id],
+        );
+        expect(processed.rows).toEqual([{ count: 1 }]);
+      },
+      { timeout: 10_000, interval: 200 },
+    );
+    const facts = await inTenant((scope) =>
+      scope.client.query(
+        `select payload->>'reminderId' as reminder_id from outbox_events
+         where event_name = 'reminder.due.v1' and payload->>'reminderId' = any($1::text[])`,
+        [[reminder.id, canceledReminder.id]],
+      ),
+    );
+    expect(facts.rows).toEqual([{ reminder_id: reminder.id }]);
+    const read = await request(service().getHttpServer())
+      .get(`/internal/v1/tasks/${taskId}/reminder`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(read.status).toBe(200);
+    const fired = GetTaskReminderInternalResponse.parse(read.body);
+    expect(fired).toMatchObject({
+      id: reminder.id,
+      version: 2,
+    });
+    expect(fired.firedAt).not.toBeNull();
+  }, 65_000);
+
+  it('creates one inbox notification after a Task assignment and current access permit', async () => {
+    const testOrganizationId = randomUUID();
+    const tenant = service().get(TenantTransactionRunner);
+    const inTenant = <T>(
+      work: (scope: TransactionScope<DatabaseSchema>) => Promise<T>,
+    ): Promise<T> =>
+      runWithOrganizationContext(memberOf(testOrganizationId), () => tenant.run(work));
+    const source = taskAssignedV1Schema.parse({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      organizationId: testOrganizationId,
+      actor: { type: 'user', id: randomUUID() },
+      version: 1,
+      key: 'CAD-482',
+      spaceId: randomUUID(),
+      listId: randomUUID(),
+      parentKey: null,
+      name: 'Préparer le sprint 14',
+      status: 'todo',
+      cancelReason: null,
+      priority: 'moyenne',
+      assigneeId: camilleMartinId,
+      assigneeIds: [camilleMartinId],
+      dueDate: null,
+      startDate: null,
+      estimateMinutes: null,
+      labels: [],
+      completedAt: null,
+    });
+    asAdmin('pub', '--jetstream', 'evt.task.assigned.v1', JSON.stringify(source));
+
+    let attempt: { id: string; expires_at: Date } | undefined;
+    await vi.waitFor(
+      async () => {
+        const result = await inTenant((scope) =>
+          scope.client.query(
+            `select attempt.id, attempt.expires_at
+             from inbox_delivery_authorization_attempts attempt
+             join outbox_events outbox on outbox.organization_id = attempt.organization_id
+               and outbox.payload->>'authorizationRequestId' = attempt.id::text
+             where attempt.source_event_id = $1
+               and outbox.event_name = 'notification.delivery-authorization-requested.v1'
+               and outbox.status = 'sent'`,
+            [source.id],
+          ),
+        );
+        expect(result.rows).toHaveLength(1);
+        attempt = z.object({ id: z.uuid(), expires_at: z.date() }).parse(result.rows[0]);
+      },
+      { timeout: 15_000, interval: 200 },
+    );
+    if (attempt === undefined) throw new Error('The inbox authorization was not recorded.');
+    const decision = taskNotificationDeliveryAuthorizedV1Schema.parse({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      organizationId: testOrganizationId,
+      actor: { type: 'system', id: 'task-service' },
+      version: 1,
+      authorizationRequestId: attempt.id,
+      decision: 'permit',
+      validUntil: attempt.expires_at.toISOString(),
+    });
+    asAdmin(
+      'pub',
+      '--jetstream',
+      'evt.task.notification-delivery-authorized.v1',
+      JSON.stringify(decision),
+    );
+
+    let notificationId: string | undefined;
+    await vi.waitFor(
+      async () => {
+        const result = await inTenant((scope) =>
+          scope.client.query(
+            `select notification.id, outbox.status
+             from inbox_notifications notification
+             join outbox_events outbox on outbox.organization_id = notification.organization_id
+               and outbox.payload->>'notificationId' = notification.id::text
+             where notification.source_event_id = $1
+               and outbox.event_name = 'notification.created.v1'`,
+            [source.id],
+          ),
+        );
+        expect(result.rows).toHaveLength(1);
+        const row = z.object({ id: z.uuid(), status: z.string() }).parse(result.rows[0]);
+        expect(row.status).toBe('sent');
+        notificationId = inboxProbeField(result.rows[0], 'id');
+      },
+      { timeout: 15_000, interval: 200 },
+    );
+    if (notificationId === undefined) throw new Error('The inbox notification was not created.');
+    const token = await signer.sign('notification-service', {
+      actor: { type: 'user', id: camilleMartinId },
+      organizationId: testOrganizationId,
+    });
+    const response = await request(service().getHttpServer())
+      .get('/internal/v1/inbox/notifications')
+      .set('Authorization', `Bearer ${token}`);
+    expect(response.status).toBe(200);
+    const page = ListInboxNotificationsInternalResponse.parse(response.body);
+    expect(page.items.find((item) => item.record.id === notificationId)?.record).toMatchObject({
+      kind: 'assignment',
+      subject: { kind: 'task-key', taskKey: 'CAD-482' },
+      readAt: null,
+    });
+  }, 40_000);
+
+  it('retries an unanswered inbox authorization with a new correlation and accepts only that permit', async () => {
+    const organizationId = randomUUID();
+    const recipientId = randomUUID();
+    const tenant = service().get(TenantTransactionRunner);
+    const inTenant = <T>(
+      work: (scope: TransactionScope<DatabaseSchema>) => Promise<T>,
+    ): Promise<T> => runWithOrganizationContext(memberOf(organizationId), () => tenant.run(work));
+    const source = taskAssignedV1Schema.parse({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      organizationId,
+      actor: { type: 'user', id: randomUUID() },
+      version: 1,
+      key: 'CAD-482',
+      spaceId: randomUUID(),
+      listId: randomUUID(),
+      parentKey: null,
+      name: 'Préparer le sprint 14',
+      status: 'todo',
+      cancelReason: null,
+      priority: 'moyenne',
+      assigneeId: recipientId,
+      assigneeIds: [recipientId],
+      dueDate: null,
+      startDate: null,
+      estimateMinutes: null,
+      labels: [],
+      completedAt: null,
+    });
+    asAdmin('pub', '--jetstream', 'evt.task.assigned.v1', JSON.stringify(source));
+
+    let first: { id: string; expires_at: Date } | undefined;
+    await vi.waitFor(
+      async () => {
+        const result = await inTenant((scope) =>
+          scope.client.query(
+            `select attempt.id, attempt.expires_at
+             from inbox_delivery_authorization_attempts attempt
+             join outbox_events outbox on outbox.organization_id = attempt.organization_id
+               and outbox.payload->>'authorizationRequestId' = attempt.id::text
+             where attempt.source_event_id = $1 and attempt.recipient_id = $2
+               and outbox.event_name = 'notification.delivery-authorization-requested.v1'
+               and outbox.status = 'sent'`,
+            [source.id, recipientId],
+          ),
+        );
+        expect(result.rows).toHaveLength(1);
+        first = z.object({ id: z.uuid(), expires_at: z.date() }).parse(result.rows[0]);
+      },
+      { timeout: 15_000, interval: 200 },
+    );
+    if (first === undefined) throw new Error('The first authorization was not recorded.');
+    const firstAttempt = first;
+
+    let replacement: { id: string; expires_at: Date } | undefined;
+    await vi.waitFor(
+      async () => {
+        const result = await inTenant((scope) =>
+          scope.client.query(
+            `select attempt.id, attempt.expires_at
+             from inbox_delivery_authorization_attempts attempt
+             join outbox_events outbox on outbox.organization_id = attempt.organization_id
+               and outbox.payload->>'authorizationRequestId' = attempt.id::text
+             where attempt.source_event_id = $1 and attempt.recipient_id = $2
+               and attempt.id <> $3 and attempt.outcome = 'pending'
+               and outbox.event_name = 'notification.delivery-authorization-requested.v1'
+               and outbox.status = 'sent'`,
+            [source.id, recipientId, firstAttempt.id],
+          ),
+        );
+        expect(result.rows).toHaveLength(1);
+        replacement = z.object({ id: z.uuid(), expires_at: z.date() }).parse(result.rows[0]);
+      },
+      { timeout: 55_000, interval: 250 },
+    );
+    if (replacement === undefined)
+      throw new Error('The replacement authorization was not recorded.');
+    const secondAttempt = replacement;
+    expect(Date.now()).toBeGreaterThanOrEqual(firstAttempt.expires_at.getTime());
+    expect(secondAttempt.id).not.toBe(firstAttempt.id);
+    const oldPermit = taskNotificationDeliveryAuthorizedV1Schema.parse({
+      id: randomUUID(),
+      occurredAt: new Date(firstAttempt.expires_at.getTime() - 1_000).toISOString(),
+      organizationId,
+      actor: { type: 'system', id: 'task-service' },
+      version: 1,
+      authorizationRequestId: firstAttempt.id,
+      decision: 'permit',
+      validUntil: firstAttempt.expires_at.toISOString(),
+    });
+    asAdmin(
+      'pub',
+      '--jetstream',
+      'evt.task.notification-delivery-authorized.v1',
+      JSON.stringify(oldPermit),
+    );
+    await vi.waitFor(
+      async () => {
+        const processed = await migrator.query<{ count: number }>(
+          `select count(*)::int as count from processed_events
+           where consumer = 'notification-service__inbox-task-delivery-authorized' and event_id = $1`,
+          [oldPermit.id],
+        );
+        expect(processed.rows).toEqual([{ count: 1 }]);
+      },
+      { timeout: 10_000, interval: 200 },
+    );
+    await inTenant(async (scope) => {
+      const attempt = await scope.client.query(
+        'select id, outcome from inbox_delivery_authorization_attempts where source_event_id = $1',
+        [source.id],
+      );
+      const inbox = await scope.client.query(
+        'select id from inbox_notifications where source_event_id = $1',
+        [source.id],
+      );
+      expect(attempt.rows).toEqual([{ id: secondAttempt.id, outcome: 'pending' }]);
+      expect(inbox.rows).toEqual([]);
+    });
+
+    const newPermit = taskNotificationDeliveryAuthorizedV1Schema.parse({
+      ...oldPermit,
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      authorizationRequestId: secondAttempt.id,
+      validUntil: secondAttempt.expires_at.toISOString(),
+    });
+    asAdmin(
+      'pub',
+      '--jetstream',
+      'evt.task.notification-delivery-authorized.v1',
+      JSON.stringify(newPermit),
+    );
+    await vi.waitFor(
+      async () => {
+        await inTenant(async (scope) => {
+          const inbox = await scope.client.query(
+            `select id from inbox_notifications where source_event_id = $1 and recipient_id = $2`,
+            [source.id, recipientId],
+          );
+          expect(inbox.rows).toHaveLength(1);
+          const id = inboxProbeField(inbox.rows[0], 'id');
+          const facts = await scope.client.query(
+            `select status from outbox_events where event_name = 'notification.created.v1'
+             and payload->>'notificationId' = $1`,
+            [id],
+          );
+          expect(facts.rows).toEqual([{ status: 'sent' }]);
+          const attempts = await scope.client.query(
+            `select id, outcome from inbox_delivery_authorization_attempts where source_event_id = $1`,
+            [source.id],
+          );
+          expect(attempts.rows).toEqual([{ id: secondAttempt.id, outcome: 'permitted' }]);
+          const requests = await scope.client.query(
+            `select payload->>'authorizationRequestId' as id from outbox_events
+             where event_name = 'notification.delivery-authorization-requested.v1'
+               and payload->>'recipientId' = $1 order by created_at`,
+            [recipientId],
+          );
+          expect(requests.rows).toEqual([{ id: firstAttempt.id }, { id: secondAttempt.id }]);
+        });
+      },
+      { timeout: 15_000, interval: 200 },
+    );
+  }, 105_000);
+
+  it('suppresses an assigned-task inbox item when in-app delivery is disabled', async () => {
+    const testOrganizationId = randomUUID();
+    const tenant = service().get(TenantTransactionRunner);
+    const recipientId = randomUUID();
+    const token = await signer.sign('notification-service', {
+      actor: { type: 'user', id: recipientId },
+      organizationId: testOrganizationId,
+    });
+    const updated = await request(service().getHttpServer())
+      .patch('/internal/v1/me/notification-preferences')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ channels: { assignment: { inApp: false, email: true } } });
+    expect(updated.status).toBe(200);
+    const preferences = UpdateNotificationPreferencesInternalResponse.parse(updated.body);
+    expect(preferences.channels.assignment).toMatchObject({ inApp: false, email: true });
+
+    const source = taskAssignedV1Schema.parse({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      organizationId: testOrganizationId,
+      actor: { type: 'user', id: randomUUID() },
+      version: 1,
+      key: 'CAD-482',
+      spaceId: randomUUID(),
+      listId: randomUUID(),
+      parentKey: null,
+      name: 'Préparer le sprint 14',
+      status: 'todo',
+      cancelReason: null,
+      priority: 'moyenne',
+      assigneeId: recipientId,
+      assigneeIds: [recipientId],
+      dueDate: null,
+      startDate: null,
+      estimateMinutes: null,
+      labels: [],
+      completedAt: null,
+    });
+    asAdmin('pub', '--jetstream', 'evt.task.assigned.v1', JSON.stringify(source));
+    let attempt: { id: string; expires_at: Date } | undefined;
+    await vi.waitFor(
+      async () => {
+        const result = await runWithOrganizationContext(memberOf(testOrganizationId), () =>
+          tenant.run((scope) =>
+            scope.client.query(
+              `select attempt.id, attempt.expires_at
+               from inbox_delivery_authorization_attempts attempt
+               join outbox_events outbox on outbox.organization_id = attempt.organization_id
+                 and outbox.payload->>'authorizationRequestId' = attempt.id::text
+               where attempt.source_event_id = $1
+                 and outbox.event_name = 'notification.delivery-authorization-requested.v1'
+                 and outbox.status = 'sent'`,
+              [source.id],
+            ),
+          ),
+        );
+        expect(result.rows).toHaveLength(1);
+        attempt = z.object({ id: z.uuid(), expires_at: z.date() }).parse(result.rows[0]);
+      },
+      { timeout: 15_000, interval: 200 },
+    );
+    if (attempt === undefined) throw new Error('The inbox authorization was not recorded.');
+    const decision = taskNotificationDeliveryAuthorizedV1Schema.parse({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      organizationId: testOrganizationId,
+      actor: { type: 'system', id: 'task-service' },
+      version: 1,
+      authorizationRequestId: attempt.id,
+      decision: 'permit',
+      validUntil: attempt.expires_at.toISOString(),
+    });
+    asAdmin(
+      'pub',
+      '--jetstream',
+      'evt.task.notification-delivery-authorized.v1',
+      JSON.stringify(decision),
+    );
+    await vi.waitFor(
+      async () => {
+        const result = await runWithOrganizationContext(memberOf(testOrganizationId), () =>
+          tenant.run((scope) =>
+            scope.client.query(
+              'select outcome from inbox_delivery_authorization_attempts where source_event_id = $1',
+              [source.id],
+            ),
+          ),
+        );
+        expect(result.rows).toEqual([{ outcome: 'permitted' }]);
+      },
+      { timeout: 15_000, interval: 200 },
+    );
+    await runWithOrganizationContext(memberOf(testOrganizationId), () =>
+      tenant.run(async (scope) => {
+        const inbox = await scope.client.query(
+          'select id from inbox_notifications where source_event_id = $1',
+          [source.id],
+        );
+        const facts = await scope.client.query(
+          `select id from outbox_events where event_name = 'notification.created.v1'
+           and payload->>'recipientId' = $1`,
+          [recipientId],
+        );
+        expect(inbox.rows).toEqual([]);
+        expect(facts.rows).toEqual([]);
+      }),
+    );
+    const listed = await request(service().getHttpServer())
+      .get('/internal/v1/inbox/notifications')
+      .set('Authorization', `Bearer ${token}`);
+    expect(listed.status).toBe(200);
+    expect(ListInboxNotificationsInternalResponse.parse(listed.body).items).toEqual([]);
+  }, 40_000);
 
   it('lets the application role read and write the platform tables of its organization only', async () => {
     const tenant = service().get(TenantTransactionRunner);
@@ -604,12 +1266,732 @@ describe('notification-service wiring', () => {
       tenant.run(async (tx) => {
         const counts: number[] = [];
         for (const table of platformTables) {
-          counts.push((await tx.client.query(`delete from ${table} returning 1`)).rows.length);
+          const where =
+            table === 'processed_events'
+              ? " where consumer = 'notification-service__wiring-probe'"
+              : '';
+          counts.push(
+            (await tx.client.query(`delete from ${table}${where} returning 1`)).rows.length,
+          );
         }
         return counts;
       }),
     );
     expect(deleted).toEqual([1, 1, 1, 1]);
+  });
+
+  it('runs reminder CRUD and cursor lookahead in tenant transactions', async () => {
+    const tenant = service().get<TenantTransactionRunner>(TenantTransactionRunner);
+    const userId = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9061';
+    const taskId = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9062';
+    const nextTaskId = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9063';
+    const now = Date.parse('2026-11-08T09:00:00.000Z');
+    const scheduled: string[] = [];
+    const work = new DrizzleRemindersUnitOfWork(tenant, (scope, reminder) => {
+      expect(scope.organizationId).toBe(atelierNordId);
+      scheduled.push(reminder.snapshot.id);
+      return Promise.resolve();
+    });
+    const set = new SetTaskReminder(work);
+    const get = new GetTaskReminder(work);
+    const reader = new DrizzleReminderCandidatesReader(tenant);
+    const inTenant = <T>(operation: () => Promise<T>): Promise<T> =>
+      runWithOrganizationContext(memberOf(atelierNordId), operation);
+    const input = {
+      organizationId: atelierNordId,
+      userId,
+      taskId,
+      remindAt: now + 60_000,
+      note: null,
+      now,
+    };
+    const first = await inTenant(() => set.execute(input));
+    expect(first.created).toBe(true);
+    expect(scheduled).toEqual([first.reminder.id]);
+    expect(
+      await inTenant(() => get.execute({ organizationId: atelierNordId, userId, taskId })),
+    ).toMatchObject({
+      id: first.reminder.id,
+      taskId,
+      version: 1,
+    });
+    expect((await inTenant(() => set.execute(input))).created).toBe(false);
+    expect(scheduled).toHaveLength(1);
+    await inTenant(() => set.execute({ ...input, taskId: nextTaskId, remindAt: now + 120_000 }));
+    const page = await inTenant(() =>
+      reader.page({
+        organizationId: atelierNordId,
+        userId,
+        expectedGeneration: null,
+        after: null,
+        limit: 1,
+      }),
+    );
+    expect(page.generation).toBe('2');
+    expect(page.hasMore).toBe(true);
+    expect(page.items.map((item) => item.snapshot.id)).toEqual([first.reminder.id]);
+    const selection = await inTenant(() =>
+      reader.selected({
+        organizationId: atelierNordId,
+        userId,
+        expectedGeneration: page.generation,
+        pairs: [{ id: first.reminder.id, taskId }],
+      }),
+    );
+    expect(selection).toHaveLength(1);
+    const failed = new SetTaskReminder(
+      new DrizzleRemindersUnitOfWork(tenant, () =>
+        Promise.reject(new Error('scheduler rejected the transaction')),
+      ),
+    );
+    await expect(
+      inTenant(() => failed.execute({ ...input, remindAt: now + 180_000 })),
+    ).rejects.toThrow('scheduler rejected the transaction');
+    const unchanged = await inTenant(() =>
+      reader.page({
+        organizationId: atelierNordId,
+        userId,
+        expectedGeneration: '2',
+        after: null,
+        limit: 1,
+      }),
+    );
+    expect(unchanged.items[0]?.snapshot.remindAt).toBe(now + 60_000);
+  });
+
+  it('pins reminder candidates and checked records to a read-only owner snapshot', async () => {
+    const tenant = service().get<TenantTransactionRunner>(TenantTransactionRunner);
+    const user = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9071';
+    const id = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9072';
+    const taskId = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9073';
+    const now = Date.parse('2026-11-08T09:00:00.000Z');
+    const initial = Reminder.schedule(
+      {
+        id,
+        organizationId: atelierNordId,
+        userId: user,
+        taskId,
+        remindAt: now + 60_000,
+        note: null,
+      },
+      now,
+    );
+    const inTenant = <T>(
+      execute: (scope: TransactionScope) => Promise<T>,
+      readOnly = false,
+    ): Promise<T> =>
+      runWithOrganizationContext(memberOf(atelierNordId), () =>
+        tenant.run(execute, readOnly ? { readOnly: true, isolationLevel: 'repeatable read' } : {}),
+      );
+    const records = (scope: TransactionScope): DrizzleReminderRecords =>
+      new DrizzleReminderRecords(scope, atelierNordId);
+
+    await inTenant(async (scope) => {
+      expect(await records(scope).pageAtGeneration(user, null, 10, null)).toEqual({
+        generation: '0',
+        items: [],
+      });
+      expect(await records(scope).selectedAtGeneration(user, '0', [])).toEqual([]);
+    }, true);
+    await inTenant(async (scope) => {
+      await records(scope).lockTaskSlot(user, taskId);
+      await records(scope).insert(initial);
+    });
+    const first = await inTenant(
+      (scope) => records(scope).pageAtGeneration(user, null, 10, null),
+      true,
+    );
+    expect(first.generation).toBe('1');
+    expect(first.items.map((item) => item.snapshot.id)).toEqual([id]);
+
+    const changed = initial.setSchedule(now + 120_000, 'Later', now);
+    let markSnapshotReady: () => void = () => undefined;
+    const snapshotReady = new Promise<void>((resolve) => {
+      markSnapshotReady = resolve;
+    });
+    let finishSnapshot: () => void = () => undefined;
+    const continueSnapshot = new Promise<void>((resolve) => {
+      finishSnapshot = resolve;
+    });
+    const concurrentRead = inTenant(async (scope) => {
+      const store = records(scope);
+      expect(
+        (await store.pageAtGeneration(user, '1', 10, null)).items[0]?.snapshot.note,
+      ).toBeNull();
+      markSnapshotReady();
+      await continueSnapshot;
+      expect(
+        (await store.selectedAtGeneration(user, '1', [{ id, taskId }]))[0]?.snapshot.note,
+      ).toBeNull();
+    }, true);
+    await snapshotReady;
+    await inTenant(async (scope) => {
+      const store = records(scope);
+      await store.findById(user, id, true);
+      await store.save(changed);
+    });
+    finishSnapshot();
+    await concurrentRead;
+    await expect(
+      inTenant((scope) => records(scope).pageAtGeneration(user, '1', 10, null), true),
+    ).rejects.toBeInstanceOf(ReminderGenerationChanged);
+    await inTenant(async (scope) => {
+      expect(await records(scope).selectedAtGeneration(user, '2', [{ id, taskId }])).toHaveLength(
+        1,
+      );
+      expect(await records(scope).selectedAtGeneration(user, '2', [{ id, taskId: user }])).toEqual(
+        [],
+      );
+      await expect(records(scope).selectedAtGeneration(user, '1', [])).rejects.toBeInstanceOf(
+        ReminderGenerationChanged,
+      );
+    }, true);
+
+    await expect(
+      inTenant(async (scope) => {
+        const store = records(scope);
+        await store.findById(user, id, true);
+        await store.save(changed.changeNote('Rolled back'));
+        throw new Error('rollback reminder');
+      }),
+    ).rejects.toThrow('rollback reminder');
+    expect(
+      (await inTenant((scope) => records(scope).pageAtGeneration(user, '2', 10, null), true))
+        .generation,
+    ).toBe('2');
+    await inTenant(async (scope) => {
+      const store = records(scope);
+      await store.findById(user, id, true);
+      await store.remove(changed);
+    });
+    expect(
+      (await inTenant((scope) => records(scope).pageAtGeneration(user, '3', 10, null), true)).items,
+    ).toEqual([]);
+  });
+
+  it('scans an empty inbox in a read-only transaction without creating an owner row', async () => {
+    const tenant = service().get<TenantTransactionRunner>(TenantTransactionRunner);
+    const user = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9099';
+    await runWithOrganizationContext(memberOf(atelierNordId), () =>
+      tenant.run(
+        async (scope) => {
+          const records = new DrizzleInboxRecords(scope, () => Promise.resolve());
+          expect(await records.unreadSubjects(atelierNordId, user, null, null, 10)).toEqual({
+            generation: '0',
+            items: [],
+            next: null,
+          });
+          expect(await records.unreadSubjects(atelierNordId, user, '0', null, 10)).toEqual({
+            generation: '0',
+            items: [],
+            next: null,
+          });
+          await expect(
+            records.unreadSubjects(atelierNordId, user, '1', null, 10),
+          ).rejects.toBeInstanceOf(InboxGenerationChanged);
+          const rows = await scope.client.query(
+            'select recipient_id from inbox_generations where organization_id = $1 and recipient_id = $2',
+            [atelierNordId, user],
+          );
+          expect(rows.rows).toEqual([]);
+        },
+        { readOnly: true },
+      ),
+    );
+  });
+
+  it('pins inbox scans and read-all to the owner generation and original creation cutoff', async () => {
+    const tenant = service().get<TenantTransactionRunner>(TenantTransactionRunner);
+    const user = camilleMartinId;
+    const now = Date.parse('2026-11-08T09:00:00.000Z');
+    const work = new DrizzleInboxRecordsUnitOfWork(tenant, async (scope, fact) => {
+      await scope.client.query(
+        `insert into outbox_events
+           (id, event_name, subject, stream, organization_id, payload, status, sent_at)
+         values (uuidv7(), 'notification.inbox-test.v1', 'evt.notification.inbox-test.v1',
+                 'EVENTS', $1, $2::jsonb, 'sent', now())`,
+        [fact.organizationId, JSON.stringify(fact)],
+      );
+    });
+    const inOwner = <T>(fn: Parameters<typeof work.run<T>>[1]): Promise<T> =>
+      runWithOrganizationContext(memberOf(atelierNordId), () => work.run(atelierNordId, fn));
+    const create = async (
+      sourceEventId: string,
+      subject: { readonly kind: 'task-key'; readonly taskKey: string } | null,
+      fail = false,
+    ): Promise<{ readonly id: string; readonly inserted: boolean }> =>
+      inOwner(async (records) => {
+        const id = await records.newId(atelierNordId);
+        const { notification, fact } = InboxNotification.create({
+          id,
+          organizationId: atelierNordId,
+          recipientId: user,
+          kind: 'mention',
+          actorUserId: null,
+          subject: null,
+          createdAt: now,
+        });
+        const inserted = await records.insert(
+          atelierNordId,
+          user,
+          sourceEventId,
+          notification,
+          fact,
+          { subject },
+        );
+        if (fail) throw new Error('Rollback probe');
+        return { id, inserted };
+      });
+    const first = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9011';
+    const second = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9012';
+    const third = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9013';
+    const visible = { kind: 'task-key' as const, taskKey: 'CAD-482' };
+    const hidden = { kind: 'task-key' as const, taskKey: 'CAD-483' };
+    const firstItem = await create(first, visible);
+    expect(firstItem.inserted).toBe(true);
+    expect((await create(first, visible)).inserted).toBe(false);
+    await create(second, hidden);
+    const self = await inOwner(async (records) => {
+      const id = await records.newId(atelierNordId);
+      const { notification, fact } = InboxNotification.create({
+        id,
+        organizationId: atelierNordId,
+        recipientId: user,
+        kind: 'mention',
+        actorUserId: user,
+        subject: null,
+        createdAt: now,
+      });
+      return records.insert(atelierNordId, user, third, notification, fact, { subject: visible });
+    });
+    expect(self).toBe(false);
+    await expect(create(third, visible, true)).rejects.toThrow('Rollback probe');
+    const page = await inOwner((records) =>
+      records.unreadSubjects(atelierNordId, user, null, null, 1),
+    );
+    expect(page.generation).toBe('2');
+    expect(page.items).toEqual([{ subject: visible, count: 1 }]);
+    expect(page.next).not.toBeNull();
+    const continuation = await inOwner((records) =>
+      records.unreadSubjects(atelierNordId, user, '2', page.next, 1),
+    );
+    expect(continuation.items).toEqual([{ subject: hidden, count: 1 }]);
+    await create(third, visible);
+    await expect(
+      inOwner((records) => records.unreadSubjects(atelierNordId, user, '2', page.next, 1)),
+    ).rejects.toBeInstanceOf(InboxGenerationChanged);
+    await expect(
+      inOwner((records) => records.readAll(atelierNordId, user, '2', '2', [visible], now + 1000)),
+    ).rejects.toBeInstanceOf(InboxGenerationChanged);
+    expect(
+      await inOwner((records) =>
+        records.readAll(atelierNordId, user, '3', '2', [visible], now + 1000),
+      ),
+    ).toEqual({ markedRead: 1, unreadCount: 1 });
+    const result = await inOwner((records) =>
+      records.findCandidate(atelierNordId, user, firstItem.id),
+    );
+    expect(result?.readAt).toBe('2026-11-08T09:00:01.000Z');
+    expect(
+      await inOwner((records) =>
+        records.change(atelierNordId, user, firstItem.id, hidden, 'archive', [999], now + 2000),
+      ),
+    ).toEqual({ kind: 'not-found' });
+    expect(
+      await inOwner((records) =>
+        records.change(atelierNordId, user, firstItem.id, visible, 'archive', [1], now + 2000),
+      ),
+    ).toEqual({ kind: 'version-mismatch', currentVersion: 2 });
+    expect(
+      (
+        await inOwner((records) =>
+          records.change(atelierNordId, user, firstItem.id, visible, 'archive', [1, 2], now + 2000),
+        )
+      ).kind,
+    ).toBe('ok');
+    const other = await runWithOrganizationContext(memberOf(otherOrganizationId), () =>
+      work.run(otherOrganizationId, (records) =>
+        records.findCandidate(otherOrganizationId, user, firstItem.id),
+      ),
+    );
+    expect(other).toBeNull();
+    const ownerOnly = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9014';
+    await create(ownerOnly, null);
+    expect(
+      (await inOwner((records) => records.unreadSubjects(atelierNordId, user, '6', null, 100)))
+        .items,
+    ).toContainEqual({ subject: null, count: 1 });
+    expect(
+      await inOwner((records) => records.readAll(atelierNordId, user, '6', '6', [], now + 3000)),
+    ).toEqual({ markedRead: 1, unreadCount: 0 });
+    const fifth = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9015';
+    const [concurrentRead, concurrentCreate] = await Promise.allSettled([
+      inOwner((records) =>
+        records.readAll(atelierNordId, user, '7', '7', [visible, hidden], now + 4000),
+      ),
+      create(fifth, visible),
+    ]);
+    expect(concurrentCreate.status).toBe('fulfilled');
+    if (concurrentCreate.status !== 'fulfilled') throw new Error('Concurrent creation failed.');
+    expect(concurrentCreate.value.inserted).toBe(true);
+    if (concurrentRead.status === 'fulfilled') {
+      expect(concurrentRead.value).toEqual({ markedRead: 2, unreadCount: 0 });
+    } else {
+      expect(concurrentRead.reason).toBeInstanceOf(InboxGenerationChanged);
+    }
+    const arriving = await inOwner((records) =>
+      records.findCandidate(atelierNordId, user, concurrentCreate.value.id),
+    );
+    expect(arriving?.readAt).toBeNull();
+    const outboxCount = await inOwner(async () =>
+      tenant.run((scope) =>
+        scope.client.query(
+          "select count(*)::int as count from outbox_events where organization_id = $1 and event_name = 'notification.inbox-test.v1'",
+          [atelierNordId],
+        ),
+      ),
+    );
+    expect(outboxCount.rows).toEqual([{ count: 5 }]);
+    await inOwner(async () =>
+      tenant.run(async (scope) => {
+        await scope.client.query(
+          "delete from outbox_events where organization_id = $1 and event_name = 'notification.inbox-test.v1'",
+          [atelierNordId],
+        );
+      }),
+    );
+  });
+
+  it('stages each source recipient once and commits one inbox fact across concurrent permits', async () => {
+    const tenant = service().get<TenantTransactionRunner>(TenantTransactionRunner);
+    const sourceEventId = randomUUID();
+    const userContext = memberOf(atelierNordId);
+    const expiresAt = Date.now() + 30_000;
+    const source = {
+      organizationId: atelierNordId,
+      sourceEventId,
+      actorUserId: null,
+      taskKey: 'CAD-482',
+      commentId: null,
+      status: null,
+    };
+    const work = new DrizzleInboxDeliveryUnitOfWork(
+      tenant,
+      writeInboxAuthorizationProbe,
+      (scope, fact, subject) =>
+        writeInboxProbe(scope, 'notification.inbox-created-test.v1', {
+          notificationId: fact.notificationId,
+          recipientId: fact.recipientId,
+          subject,
+        }),
+      () => Promise.resolve(),
+    );
+    const staging = new StageInboxDeliveries(work, Date.now);
+    const accept = new AcceptInboxDeliveryAuthorization(work, Date.now, () =>
+      Promise.resolve(true),
+    );
+    const stage = (): Promise<number> =>
+      runWithOrganizationContext(userContext, () =>
+        staging.execute({
+          source,
+          audiences: [{ kind: 'assignment', recipientIds: [camilleMartinId, camilleMartinId] }],
+          expiresAt,
+        }),
+      );
+
+    const staged = await Promise.all([stage(), stage()]);
+    expect(staged.sort()).toEqual([0, 1]);
+    const attemptId = await runWithOrganizationContext(userContext, () =>
+      tenant.run(async (scope) => {
+        const result = await scope.client.query(
+          'select id from inbox_delivery_authorization_attempts where source_event_id = $1',
+          [sourceEventId],
+        );
+        const requests = await scope.client.query(
+          "select id from outbox_events where payload->>'sourceEventId' = $1",
+          [sourceEventId],
+        );
+        expect(requests.rows).toHaveLength(1);
+        return inboxProbeField(result.rows[0], 'id');
+      }),
+    );
+    const permit = {
+      organizationId: atelierNordId,
+      attemptId,
+      decision: 'permit' as const,
+      validUntil: expiresAt,
+      decidedAt: Date.now(),
+    };
+    await expect(
+      runWithOrganizationContext(memberOf(otherOrganizationId), () =>
+        accept.execute({ ...permit, organizationId: otherOrganizationId }),
+      ),
+    ).resolves.toBe(false);
+    const apply = (): Promise<boolean> =>
+      runWithOrganizationContext(userContext, () => accept.execute(permit));
+    const applied = await Promise.all([apply(), apply()]);
+    expect(applied.sort()).toEqual([false, true]);
+
+    await runWithOrganizationContext(userContext, () =>
+      tenant.run(async (scope) => {
+        const record = await scope.client.query(
+          'select id, subject_value from inbox_notifications where source_event_id = $1',
+          [sourceEventId],
+        );
+        expect(record.rows).toHaveLength(1);
+        expect(inboxProbeField(record.rows[0], 'subject_value')).toBe(source.taskKey);
+        const result = await scope.client.query(
+          "select id from outbox_events where payload->>'notificationId' = $1",
+          [inboxProbeField(record.rows[0], 'id')],
+        );
+        expect(result.rows).toHaveLength(1);
+      }),
+    );
+  });
+
+  it('rolls back inbox creation, outbox and permit when the fact writer fails', async () => {
+    const tenant = service().get<TenantTransactionRunner>(TenantTransactionRunner);
+    const sourceEventId = randomUUID();
+    const userContext = memberOf(atelierNordId);
+    let notificationId: string | undefined;
+    let shouldFail = true;
+    const work = new DrizzleInboxDeliveryUnitOfWork(
+      tenant,
+      writeInboxAuthorizationProbe,
+      async (scope, fact) => {
+        notificationId = fact.notificationId;
+        await writeInboxProbe(scope, 'notification.inbox-created-test.v1', { notificationId });
+        if (shouldFail) throw new Error('Simulated transactional inbox outbox failure.');
+      },
+      () => Promise.resolve(),
+    );
+    const staging = new StageInboxDeliveries(work, Date.now);
+    const accept = new AcceptInboxDeliveryAuthorization(work, Date.now, () =>
+      Promise.resolve(true),
+    );
+    const expiresAt = Date.now() + 30_000;
+    await runWithOrganizationContext(userContext, () =>
+      staging.execute({
+        source: {
+          organizationId: atelierNordId,
+          sourceEventId,
+          actorUserId: null,
+          taskKey: 'CAD-482',
+          commentId: null,
+          status: null,
+        },
+        audiences: [{ kind: 'mention', recipientIds: [camilleMartinId] }],
+        expiresAt,
+      }),
+    );
+    const attemptId = await runWithOrganizationContext(userContext, () =>
+      tenant.run(async (scope) => {
+        const result = await scope.client.query(
+          'select id from inbox_delivery_authorization_attempts where source_event_id = $1',
+          [sourceEventId],
+        );
+        return inboxProbeField(result.rows[0], 'id');
+      }),
+    );
+    const permit = {
+      organizationId: atelierNordId,
+      attemptId,
+      decision: 'permit' as const,
+      validUntil: expiresAt,
+      decidedAt: Date.now(),
+    };
+    const apply = (): Promise<boolean> =>
+      runWithOrganizationContext(userContext, () => accept.execute(permit));
+    await expect(apply()).rejects.toThrow('Simulated transactional inbox outbox failure.');
+    expect(notificationId).toBeDefined();
+    await runWithOrganizationContext(userContext, () =>
+      tenant.run(async (scope) => {
+        const attempt = await scope.client.query(
+          'select outcome from inbox_delivery_authorization_attempts where id = $1',
+          [attemptId],
+        );
+        expect(inboxProbeField(attempt.rows[0], 'outcome')).toBe('pending');
+        const inbox = await scope.client.query(
+          'select id from inbox_notifications where source_event_id = $1',
+          [sourceEventId],
+        );
+        const outbox = await scope.client.query(
+          "select id from outbox_events where payload->>'notificationId' = $1",
+          [notificationId],
+        );
+        expect(inbox.rows).toHaveLength(0);
+        expect(outbox.rows).toHaveLength(0);
+      }),
+    );
+    shouldFail = false;
+    await expect(apply()).resolves.toBe(true);
+    await expect(apply()).resolves.toBe(false);
+  });
+
+  it('uses the same notification preferences without a selected organization or after a switch', async () => {
+    const system = service().get<SystemTransactionRunner>(SystemTransactionRunner);
+    const tenant = service().get(TenantTransactionRunner);
+    const work = new SystemPreferencesUnitOfWork(system);
+    const read = new GetNotificationPreferences(work);
+    const update = new UpdateNotificationPreferences(work);
+    const userId = camilleMartinId;
+
+    const defaults = await read.execute({ userId });
+    expect(defaults).toMatchObject({ userId, digest: 'daily', version: 1 });
+    await expect(update.execute({ userId, patch: { digest: 'daily' } })).resolves.toEqual(defaults);
+    const saved = 'select user_id from notification_preferences where user_id = $1';
+    expect((await system.run((tx) => tx.client.query(saved, [userId]))).rows).toEqual([]);
+
+    const changed = await update.execute({
+      userId,
+      patch: { digest: 'weekly' },
+      expectedVersions: [1, 3],
+    });
+    expect(changed).toMatchObject({ userId, digest: 'weekly', version: 2 });
+    for (const organization of [atelierNordId, otherOrganizationId]) {
+      await expect(
+        runWithOrganizationContext(memberOf(organization), () =>
+          read.execute({ userId: userId.toUpperCase() }),
+        ),
+      ).resolves.toEqual(changed);
+    }
+
+    const otherUser = '01938f6e-0000-7000-8000-000000000003';
+    await expect(work.run(otherUser, (store) => store.find(userId))).rejects.toThrow();
+    await expect(read.execute({ userId: otherUser })).resolves.toMatchObject({
+      userId: otherUser,
+      digest: 'daily',
+      version: 1,
+    });
+    const tenantRows = await runWithOrganizationContext(memberOf(atelierNordId), () =>
+      tenant.run((tx) => tx.client.query(saved, [userId])),
+    );
+    expect(tenantRows.rows).toEqual([]);
+  });
+
+  it('limits tenant preference reads to the selected recipient without granting writes', async () => {
+    const tenant = service().get(TenantTransactionRunner);
+    const system = service().get<SystemTransactionRunner>(SystemTransactionRunner);
+    const update = new UpdateNotificationPreferences(new SystemPreferencesUnitOfWork(system));
+    const firstUser = randomUUID();
+    const secondUser = randomUUID();
+    for (const userId of [firstUser, secondUser]) {
+      await update.execute({ userId, patch: { digest: 'weekly' } });
+    }
+
+    await runWithOrganizationContext(memberOf(atelierNordId), () =>
+      tenant.run(async (scope) => {
+        await scope.client.query("select set_config('app.notification_recipient_id', $1, true)", [
+          firstUser,
+        ]);
+        const visible = await scope.client.query(
+          'select user_id from notification_preferences where user_id = any($1::uuid[])',
+          [[firstUser, secondUser]],
+        );
+        expect(visible.rows).toEqual([{ user_id: firstUser }]);
+        const changed = await scope.client.query(
+          "update notification_preferences set digest = 'daily' where user_id = $1 returning user_id",
+          [firstUser],
+        );
+        expect(changed.rows).toEqual([]);
+        await scope.client.query("select set_config('app.notification_recipient_id', '', true)");
+        const afterReset = await scope.client.query(
+          'select user_id from notification_preferences where user_id = any($1::uuid[])',
+          [[firstUser, secondUser]],
+        );
+        expect(afterReset.rows).toEqual([]);
+      }),
+    );
+    await expect(
+      runWithOrganizationContext(memberOf(atelierNordId), () =>
+        tenant.run(async (scope) => {
+          await scope.client.query("select set_config('app.notification_recipient_id', $1, true)", [
+            firstUser,
+          ]);
+          await scope.client.query(
+            `insert into notification_preferences (user_id, channels, digest, do_not_disturb, version)
+             select $2, channels, digest, do_not_disturb, version
+             from notification_preferences where user_id = $1`,
+            [firstUser, randomUUID()],
+          );
+        }),
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
+
+    const pool = service().get<pg.Pool>(DATABASE_POOL);
+    const connection = await pool.connect();
+    try {
+      await connection.query('begin');
+      await connection.query("select set_config('app.notification_recipient_id', $1, true)", [
+        firstUser,
+      ]);
+      const withoutOrganization = await connection.query(
+        'select user_id from notification_preferences where user_id = $1',
+        [firstUser],
+      );
+      expect(withoutOrganization.rows).toEqual([]);
+    } finally {
+      await connection.query('rollback');
+      connection.release();
+    }
+    await expect(
+      new GetNotificationPreferences(new SystemPreferencesUnitOfWork(system)).execute({
+        userId: firstUser,
+      }),
+    ).resolves.toMatchObject({ digest: 'weekly', version: 2 });
+  });
+
+  it('serializes the first effective preferences writes before reading the default version', async () => {
+    const system = service().get<SystemTransactionRunner>(SystemTransactionRunner);
+    const work = new SystemPreferencesUnitOfWork(system);
+    const update = new UpdateNotificationPreferences(work);
+    const userId = '01938f6e-0000-7000-8000-000000000004';
+    let markLocked: () => void = () => undefined;
+    const locked = new Promise<void>((resolve) => {
+      markLocked = resolve;
+    });
+    let releaseFirst: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const first = work.run(userId, async (store) => {
+      await store.lockAccount(userId);
+      markLocked();
+      await released;
+      return update.execute({ userId, patch: { digest: 'weekly' }, expectedVersions: [1] });
+    });
+    await Promise.race([locked, first]);
+    const second = update.execute({
+      userId,
+      patch: { doNotDisturb: false },
+      expectedVersions: [1],
+    });
+    const results = Promise.allSettled([first, second]);
+    try {
+      await vi.waitFor(async () => {
+        const waiting = await migrator.query<{ waiting: boolean }>(
+          `select exists (
+             select 1 from pg_locks
+             where locktype = 'advisory' and not granted
+               and database = (select oid from pg_database where datname = current_database())
+           ) as waiting`,
+        );
+        expect(waiting.rows).toEqual([{ waiting: true }]);
+      });
+    } finally {
+      releaseFirst();
+      await results;
+    }
+
+    const [written, stale] = await results;
+    expect(written).toMatchObject({ status: 'fulfilled', value: { digest: 'weekly', version: 2 } });
+    expect(stale).toMatchObject({ status: 'rejected', reason: { currentVersion: 2 } });
+    await expect(new GetNotificationPreferences(work).execute({ userId })).resolves.toMatchObject({
+      digest: 'weekly',
+      doNotDisturb: true,
+      version: 2,
+    });
   });
 
   it('refuses any change of structure to the application role', async () => {
