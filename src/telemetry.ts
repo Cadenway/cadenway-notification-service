@@ -7,4 +7,7 @@ import { startTelemetry } from '@cadenway/nest-common/telemetry';
 // metrics leave as OTLP over HTTP to OTEL_EXPORTER_OTLP_ENDPOINT; unset, spans are still created
 // (trace ids in the logs, `traceparent` propagated over HTTP and NATS) and nothing leaves the
 // process.
-startTelemetry({ service: 'notification-service' });
+startTelemetry({
+  service: 'notification-service',
+  sensitiveHttpPathPrefixes: ['/internal/v1/inbox/'],
+});
