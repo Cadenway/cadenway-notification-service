@@ -29,6 +29,7 @@ describe('appConfigSchema', () => {
       LOG_LEVEL: 'info',
       LOG_PRETTY: false,
       DATABASE_URL: 'postgres://notification_app:notification_app@localhost:5432/notification',
+      DATABASE_TRANSACTION_MAX_ATTEMPTS: 3,
       NATS_URL: 'nats://localhost:4222',
       NATS_USER: 'notification',
       NATS_PASSWORD: 'notification',
@@ -48,6 +49,16 @@ describe('appConfigSchema', () => {
       MAIL_FROM: 'no-reply@cadenway.localhost',
       WEB_APP_URL: 'http://app.cadenway.localhost',
     });
+  });
+
+  it('accepts a single database attempt and refuses a non-positive limit', () => {
+    expect(
+      loadConfig(appConfigSchema, { ...complete, DATABASE_TRANSACTION_MAX_ATTEMPTS: '1' })
+        .DATABASE_TRANSACTION_MAX_ATTEMPTS,
+    ).toBe(1);
+    expect(() =>
+      loadConfig(appConfigSchema, { ...complete, DATABASE_TRANSACTION_MAX_ATTEMPTS: '0' }),
+    ).toThrow(/DATABASE_TRANSACTION_MAX_ATTEMPTS/u);
   });
 
   it('accepts the committed .env.example as it is', () => {
