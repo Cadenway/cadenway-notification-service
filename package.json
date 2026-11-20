@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@cadenway/contracts": "0.16.0",
-    "@cadenway/nest-common": "0.8.1",
+    "@cadenway/nest-common": "0.11.0",
     "@cadenway/nest-jobs": "0.4.0",
     "@cadenway/nest-messaging": "0.3.2",
     "@nestjs/common": "^12.4.2",
