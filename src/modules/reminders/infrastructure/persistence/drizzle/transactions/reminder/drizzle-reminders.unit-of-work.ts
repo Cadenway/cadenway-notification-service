@@ -45,8 +45,6 @@ export class DrizzleRemindersUnitOfWork implements RemindersUnitOfWork {
         save: (reminder) => records.save(reminder),
         remove: (reminder) => records.remove(reminder),
         schedule: (reminder) => this.schedule(scope, reminder),
-        taskVisibility: () => Promise.resolve('unavailable'),
-        recordDue: () => Promise.reject(new Error('Use the reminder authorization workflow.')),
       };
       return work(store);
     });

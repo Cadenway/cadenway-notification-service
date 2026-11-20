@@ -1,7 +1,6 @@
 import type { Reminder } from '../../../../../domain/aggregates/reminder/reminder.aggregate.js';
-import type { ReminderDue } from '../../../../../domain/events/reminder/reminder-due.event.js';
 
-/** A tenant-scoped transaction over reminders, current visibility and durable jobs. */
+/** A tenant-scoped transaction over reminder records and durable jobs. */
 export interface ReminderStore {
   // #region Methods
   /** Allocates a reminder identifier in the tenant transaction. */
@@ -21,13 +20,6 @@ export interface ReminderStore {
   /** Loads the sole pending reminder after locking its task slot. */
   findPending(organizationId: string, userId: string, taskId: string): Promise<Reminder | null>;
 
-  /** Rechecks a task against an authoritative current visibility source. */
-  taskVisibility(
-    organizationId: string,
-    userId: string,
-    taskId: string,
-  ): Promise<'visible' | 'hidden' | 'unavailable'>;
-
   /** Stores the complete aggregate in this transaction. */
   save(reminder: Reminder): Promise<void>;
 
@@ -36,8 +28,5 @@ export interface ReminderStore {
 
   /** Enqueues one idempotent job for the schedule version in this transaction. */
   schedule(reminder: Reminder): Promise<void>;
-
-  /** Records the due fact in the outbox in this transaction once its contract is published. */
-  recordDue(fact: ReminderDue): Promise<void>;
   // #endregion
 }
