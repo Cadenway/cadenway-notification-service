@@ -20,7 +20,7 @@ export interface ActivityDigestPersistenceBindings {
   /** Schedules a bounded account planning pass with no private delivery fields. */
   enqueuePlan(
     scope: TransactionScope,
-    job: { readonly userId: string; readonly notBeforeMs: number },
+    job: { readonly userId: string; readonly notBeforeMs: number; readonly runAt?: number },
   ): Promise<void>;
 
   /** Enqueues the stable occurrence and generation for its reserved due instant. */

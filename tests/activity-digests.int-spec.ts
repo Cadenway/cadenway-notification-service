@@ -28,7 +28,8 @@ import { z } from 'zod';
 
 import { AppModule } from '../src/app.module.js';
 import { appConfigSchema } from '../src/config/app-config.js';
-import { PLAN_ACTIVITY_EMAIL_QUEUE } from '../src/config/job-queues.js';
+import { PLAN_ACTIVITY_EMAIL_QUEUE, SEND_ACTIVITY_EMAIL_QUEUE } from '../src/config/job-queues.js';
+import { PlanActivityEmail } from '../src/modules/activity-digests/application/use-cases/commands/digest/plan-activity-email/plan-activity-email.use-case.js';
 import { notificationIdentityTestKey } from './support/notification-identity-test-config.js';
 
 const composeFile = fileURLToPath(new URL('../compose.dev.yaml', import.meta.url));
@@ -345,7 +346,11 @@ describe('activity email delivery alongside Inbox', () => {
   });
 
   /** Sets the fixture account's real preferences through the signed internal HTTP route. */
-  async function setPreferences(source: TaskAssignedV1, email: boolean): Promise<void> {
+  async function setPreferences(
+    source: TaskAssignedV1,
+    email: boolean,
+    digest: 'each' | 'weekly' = 'each',
+  ): Promise<void> {
     const token = await gatewaySigner.sign('notification-service', {
       actor: { type: 'user', id: source.assigneeId },
       organizationId: null,
@@ -354,13 +359,13 @@ describe('activity email delivery alongside Inbox', () => {
       .patch('/internal/v1/me/notification-preferences')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        digest: 'each',
+        digest,
         doNotDisturb: true,
         channels: { assignment: { email, inApp: !email } },
       });
     expect(response.status).toBe(200);
     expect(UpdateNotificationPreferencesInternalResponse.parse(response.body)).toMatchObject({
-      digest: 'each',
+      digest,
       doNotDisturb: true,
       channels: { assignment: { email, inApp: !email } },
     });
@@ -555,10 +560,10 @@ describe('activity email delivery alongside Inbox', () => {
     }, WAIT);
     await waitUntilHandled('inbox-task-assigned');
     const plan = await system.run(({ client }) =>
-      client.query(`select state from pgboss.job where name = $1 and data->>'userId' = $2`, [
-        PLAN_ACTIVITY_EMAIL_QUEUE,
-        source.assigneeId,
-      ]),
+      client.query(
+        `select state from pgboss.job where name = $1 and data -> 'payload' ->> 'userId' = $2`,
+        [PLAN_ACTIVITY_EMAIL_QUEUE, source.assigneeId],
+      ),
     );
     expect(plan.rows).toEqual([]);
     expect(identityReads).not.toContain(source.assigneeId);
@@ -592,4 +597,64 @@ describe('activity email delivery alongside Inbox', () => {
       emailCandidateCount: 0,
     });
   }, 100_000);
+
+  it('reserves one weekly slot and persists a single deferred continuation for overflow', async () => {
+    const source = assignment();
+    knownRecipients.set(source.assigneeId, 'weekly@example.test');
+    await setPreferences(source, true, 'weekly');
+    const system = app().get(SystemTransactionRunner);
+    await system.run(async ({ client }) => {
+      await client.query(
+        `insert into activity_email_candidates (organization_id, source_event_id, recipient_id, kind, task_key)
+         select $1, gen_random_uuid(), $2, 'assignment', $3 from generate_series(1, 101)`,
+        [source.organizationId, source.assigneeId, source.key],
+      );
+    });
+    const plan = app().get(PlanActivityEmail);
+    const notBeforeMs = Date.now() + 8 * 86_400_000;
+    const input = { userId: source.assigneeId, notBeforeMs };
+    const passes = await Promise.all([plan.execute(input), plan.execute(input)]);
+    expect(passes.sort()).toEqual([0, 1]);
+
+    const state = () =>
+      system.run(async ({ client }) => {
+        const slots = await client.query(
+          `select occurrence.due_at, count(candidate.id)::int as assigned
+             from activity_email_occurrences occurrence
+             join activity_email_candidates candidate on candidate.occurrence_id = occurrence.id
+            where occurrence.recipient_id = $1
+            group by occurrence.id order by occurrence.due_at`,
+          [source.assigneeId],
+        );
+        const jobs = await client.query(
+          `select name, start_after from pgboss.job
+            where data -> 'payload' ->> 'userId' = $1 order by start_after`,
+          [source.assigneeId],
+        );
+        return {
+          slots: z.object({ due_at: z.date(), assigned: z.number() }).array().parse(slots.rows),
+          jobs: z.object({ name: z.string(), start_after: z.date() }).array().parse(jobs.rows),
+        };
+      });
+
+    const first = await state();
+    expect(first.slots).toHaveLength(1);
+    const [slot] = first.slots;
+    if (slot === undefined) throw new Error('Missing first weekly digest slot.');
+    expect(slot.assigned).toBe(100);
+    const cutoff = slot.due_at.getTime() + 1;
+    expect(first.jobs).toEqual([
+      { name: SEND_ACTIVITY_EMAIL_QUEUE, start_after: slot.due_at },
+      { name: PLAN_ACTIVITY_EMAIL_QUEUE, start_after: new Date(cutoff) },
+    ]);
+
+    await expect(plan.execute({ ...input, notBeforeMs: cutoff })).resolves.toBe(1);
+    const next = await state();
+    expect(next.slots.map(({ assigned }) => assigned)).toEqual([100, 1]);
+    expect(next.jobs.map(({ name }) => name)).toEqual([
+      SEND_ACTIVITY_EMAIL_QUEUE,
+      PLAN_ACTIVITY_EMAIL_QUEUE,
+      SEND_ACTIVITY_EMAIL_QUEUE,
+    ]);
+  });
 });

@@ -21,20 +21,21 @@ correlation. Durable jobs and these tables hold neither the recipient address no
 
 ## API
 
-`notification.delivery-authorization-requested.v1` requests current access for the exact pending
-tenant, recipient and task selector. It uses the same AsyncAPI fact as Inbox and Reminders with a
-distinct activity correlation.
+None.
 
 ## Events emitted
 
-None.
+`notification.delivery-authorization-requested.v1` requests current Task access for the exact
+tenant, recipient and task selector. Notification owns the request, which Inbox and Reminders
+also emit with separate correlations. Task owns the decision.
 
 ## Events consumed
 
-Inbox hands off its trusted Assignment, Mention, Comment, Status Change and Access audience in the
-source event transaction. `task.notification-delivery-authorized.v1` uses the dedicated
-`activity-task-delivery-authorized` durable and accepts only a Task system decision for a current
-activity correlation. Existing Inbox consumers keep their own decision durable.
+- Inbox hands off its trusted Assignment, Mention, Comment, Status Change and Access audience in
+  the source event transaction.
+- `task.notification-delivery-authorized.v1` is consumed on the dedicated
+  `activity-task-delivery-authorized` durable and accepts only a Task system decision for a
+  current activity correlation. Inbox keeps its own decision durable.
 
 ## Invariants
 
@@ -51,8 +52,11 @@ activity correlation. Existing Inbox consumers keep their own decision durable.
   uses `Europe/Paris` when no account time zone is set.
 - Reserve a digest once per account, cadence, and local date across organizations. Keep this
   identity independent of the time zone and profile version used to compute the dispatch instant.
+  The digest takes up to 100 candidates in creation order. Overflow stays pending for the next
+  permitted cycle. New eligible candidates can fill the same future slot until it reaches capacity.
 - Resolve the current verified recipient profile and current email preferences before handing
-  anything to SMTP. Recompute the schedule when the stored profile version or time zone changes.
+  anything to SMTP. A mobile or in-app preference revision does not move a digest. Revalidate
+  each candidate's email category. Recompute the schedule when cadence or recipient profile changes.
   Skip a missing, inactive, or unverified recipient. Check current Task authorization for each
   item under its own organization and source selectors. Omit inaccessible items and skip empty
   digests. A temporary lookup failure defers the send within the configured retry budget.
@@ -64,9 +68,11 @@ activity correlation. Existing Inbox consumers keep their own decision durable.
 
 ## Transactions
 
-Candidate intake persists deduplication and candidate state together. The dispatch transaction
-reserves the occurrence and enqueues its job atomically. External authorization, profile reads,
-and SMTP run outside database transactions. Record the delivery result in a separate transaction.
+Candidate intake persists deduplication, candidate state and the next planning job together.
+Planning reserves the occurrence and enqueues its job atomically. Task authorization attempts
+and their outbox records commit together. Profile reads and SMTP run outside database
+transactions. Recheck the verified recipient after claiming the send lease and record delivery
+in a separate transaction.
 
 ## Decisions
 
@@ -74,9 +80,13 @@ and SMTP run outside database transactions. Record the delivery result in a sepa
   Run the regular migrator to apply `0008` and provision the new queues. Deploy the matching trust
   at Identity and the dedicated NATS durable permissions before setting the pair. With both
   variables absent, Inbox and the existing email capabilities run without staging activity
-  candidates or registering activity consumers and workers.
+  candidates or registering activity consumers and workers. During a mixed rollout, a dormant
+  replica can acknowledge the shared Inbox source fact without handing it off to Activity.
+  Activity coverage starts once every Notification replica has the pair enabled. Inbox behavior
+  stays the same during rollout.
 - The account planner receives a transactionally enqueued job when a candidate is staged. It
-  reserves at most 100 candidates per pass and enqueues due batches in the same transaction. The
+  reserves at most 100 candidates per pass and enqueues delivery in the same transaction. A
+  daily or weekly overflow continuation waits until its current slot has passed. The
   delivery job checks current account settings and Identity profile, requests a fresh Task permit
   within each originating tenant and uses its bounded durable retry budget while a decision is
   pending. A replaced generation, completed occurrence or deleted account cannot send.

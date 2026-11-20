@@ -537,7 +537,8 @@ describe('notification-service wiring', () => {
         order by relname`,
     );
     const policies = await migrator.query<{ tablename: string; policyname: string }>(
-      `select tablename, policyname from pg_policies where schemaname = 'public' order by tablename`,
+      `select tablename, policyname from pg_policies
+        where schemaname = 'public' order by tablename, policyname`,
     );
 
     expect(tables.rows).toEqual([

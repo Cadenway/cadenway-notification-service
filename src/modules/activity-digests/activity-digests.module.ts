@@ -89,8 +89,18 @@ const EMAIL_SENDER = Symbol('ACTIVITY_EMAIL_SENDER');
               },
             };
           },
-          enqueuePlan: async (scope, job) => {
-            await jobs.enqueue(scope, PLAN_ACTIVITY_EMAIL_QUEUE, job);
+          enqueuePlan: async (scope, { runAt, ...job }) => {
+            await jobs.enqueue(
+              scope,
+              PLAN_ACTIVITY_EMAIL_QUEUE,
+              job,
+              runAt === undefined
+                ? undefined
+                : {
+                    occurrenceKey: `${job.userId}:${String(runAt)}`,
+                    startAfter: new Date(runAt),
+                  },
+            );
           },
           enqueueDelivery: async (scope, { runAt, ...job }) => {
             await jobs.enqueue(scope, SEND_ACTIVITY_EMAIL_QUEUE, job, {

@@ -1,8 +1,10 @@
 import { and, asc, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
 
 import type { ActivityAuthorizationAttempt } from '../../../../../application/models/digest/activity-authorization-attempt.model.js';
-import type { ActivityEmailCandidate } from '../../../../../application/models/digest/activity-email-candidate.model.js';
+import type { ActivityAuthorizationCandidate } from '../../../../../application/models/digest/activity-authorization-candidate.model.js';
+import type { ActivityDeliveryDecision } from '../../../../../application/models/digest/activity-delivery-decision.model.js';
 import type { ActivityEmailDelivery } from '../../../../../application/models/digest/activity-email-delivery.model.js';
+import type { ActivityEmailPreferences } from '../../../../../application/models/digest/activity-email-preferences.model.js';
 import type { ActivityDeliveryStore } from '../../../../../application/ports/outbound/transactions/digest/activity-delivery-store.port.js';
 import { activityEmailAuthorizationAttempts as attempts } from '../../schemas/digest/activity-email-authorization-attempts.schema.js';
 import { activityEmailCandidates as candidates } from '../../schemas/digest/activity-email-candidates.schema.js';
@@ -53,28 +55,8 @@ function availableLease() {
   return or(isNull(occurrences.leaseUntil), lte(occurrences.leaseUntil, databaseTime));
 }
 
-/** Maps private selectors explicitly so persistence metadata never leaves the store. */
-function toCandidate(row: typeof candidates.$inferSelect): ActivityEmailCandidate {
-  const {
-    organizationId,
-    recipientId,
-    sourceEventId,
-    actorUserId,
-    kind,
-    taskKey,
-    commentId,
-    status,
-  } = row;
-  return {
-    organizationId,
-    recipientId,
-    sourceEventId,
-    actorUserId,
-    kind,
-    taskKey,
-    commentId,
-    status,
-  };
+function activeLease(leaseId: string) {
+  return and(eq(occurrences.leaseId, leaseId), gt(occurrences.leaseUntil, databaseTime));
 }
 
 /** Owns tenant authorization correlations and account-scoped leases in the active transaction. */
@@ -140,21 +122,26 @@ export class DrizzleActivityDelivery implements ActivityDeliveryStore {
     }
   }
 
-  /** Reuses a live request or settled denial and rotates elapsed correlations with a new ID. */
-  public async requestAuthorization(
+  /** Serializes tenant requests with account mutations and reads only current candidate bindings. */
+  public async listAuthorizationCandidates(
     organizationId: string,
     userId: string,
     occurrenceId: string,
     generation: number,
-    expiresAt: number,
-  ): Promise<void> {
+  ): Promise<readonly ActivityAuthorizationCandidate[]> {
     const tenantId = this.scope.requireTenant(organizationId);
     const recipientId = userId.toLowerCase();
     await this.scope.lockAccount(recipientId);
-    const { db } = this.scope.transaction;
-    const rows = await db
-      .select({ id: candidates.id, taskKey: candidates.taskKey })
+    const rows = await this.scope.transaction.db
+      .select({
+        candidateId: candidates.id,
+        taskKey: candidates.taskKey,
+        outcome: attempts.outcome,
+        expiresAt: attempts.expiresAt,
+        validUntil: attempts.validUntil,
+      })
       .from(candidates)
+      .leftJoin(attempts, currentCandidate)
       .where(
         and(
           eq(candidates.organizationId, tenantId),
@@ -163,17 +150,36 @@ export class DrizzleActivityDelivery implements ActivityDeliveryStore {
       )
       .orderBy(asc(candidates.id))
       .limit(maxActivityDigestBatchSize + 1);
-    if (rows.length === 0) return;
-    validateActivityDigestBatchSize(rows.length);
+    if (rows.length > maxActivityDigestBatchSize) {
+      throw new Error('The activity email occurrence exceeds its authorization bound.');
+    }
+    return rows.map((row) => ({
+      ...row,
+      expiresAt: row.expiresAt?.getTime() ?? null,
+      validUntil: row.validUntil?.getTime() ?? null,
+    }));
+  }
 
+  /** Changes the correlation only while its persisted deadline or expiry permits rotation. */
+  public async reserveAuthorizationAttempts(
+    organizationId: string,
+    userId: string,
+    occurrenceId: string,
+    generation: number,
+    expiresAt: number,
+    candidateIds: readonly string[],
+  ): Promise<readonly { readonly attemptId: string; readonly candidateId: string }[]> {
+    const tenantId = this.scope.requireTenant(organizationId);
+    const recipientId = userId.toLowerCase();
+    validateActivityDigestBatchSize(candidateIds.length);
     const deadline = new Date(expiresAt);
-    const inserted = await db
+    return this.scope.transaction.db
       .insert(attempts)
       .values(
-        rows.map(({ id }) => ({
+        candidateIds.map((candidateId) => ({
           organizationId: tenantId,
           recipientId,
-          candidateId: id,
+          candidateId,
           occurrenceId,
           generation,
           expiresAt: deadline,
@@ -201,19 +207,18 @@ export class DrizzleActivityDelivery implements ActivityDeliveryStore {
         ),
       })
       .returning({ attemptId: attempts.id, candidateId: attempts.candidateId });
-    const taskKeys = new Map(rows.map(({ id, taskKey }) => [id, taskKey]));
-    for (const { attemptId, candidateId } of inserted) {
-      const taskKey = taskKeys.get(candidateId);
-      if (taskKey === undefined)
-        throw new Error('Activity email authorization lost its candidate.');
-      await this.bindings.writeAuthorization(this.scope.transaction, {
-        attemptId,
-        organizationId: tenantId,
-        recipientId,
-        taskKey,
-        expiresAt,
-      });
-    }
+  }
+
+  /** Resolves the verified tenant before appending the outbox event. */
+  public appendAuthorization(
+    request: Parameters<ActivityDeliveryStore['appendAuthorization']>[0],
+  ): Promise<void> {
+    const organizationId = this.scope.requireTenant(request.organizationId);
+    return this.bindings.writeAuthorization(this.scope.transaction, {
+      ...request,
+      organizationId,
+      recipientId: request.recipientId.toLowerCase(),
+    });
   }
 
   /** Completes a missing recipient's occurrence only when another sender does not hold it. */
@@ -226,86 +231,80 @@ export class DrizzleActivityDelivery implements ActivityDeliveryStore {
     await this.complete(recipientId, occurrenceId, generation, availableLease());
   }
 
-  /** Leases only a complete bounded page of current decisions and a matching account profile. */
-  public async leaseAuthorized(
+  /** Locks exactly the requested generation once due and free of a live lease. */
+  public async lockDueOccurrence(
     userId: string,
     occurrenceId: string,
     generation: number,
-    profileVersion: number,
-    limit: number,
   ): Promise<ActivityEmailDelivery | null> {
     const recipientId = this.scope.requireAccount(userId);
-    validateActivityDigestBatchSize(limit);
     const binding = scheduledOccurrence(recipientId, occurrenceId, generation);
-    const { db } = this.scope.transaction;
-    const [occurrence] = await db
+    const [row] = await this.scope.transaction.db
       .select({
-        preferenceVersion: occurrences.preferenceVersion,
+        occurrenceId: occurrences.id,
+        generation: occurrences.generation,
+        recipientId: occurrences.recipientId,
         profileVersion: occurrences.profileVersion,
         cadence: occurrences.cadence,
       })
       .from(occurrences)
       .where(and(binding, availableLease(), lte(occurrences.dueAt, databaseTime)))
       .for('update');
-    if (occurrence === undefined) return null;
+    return row ?? null;
+  }
 
-    const preferences = await this.bindings.readPreferences(this.scope.transaction, recipientId);
-    if (
-      preferences.version !== occurrence.preferenceVersion ||
-      preferences.cadence !== occurrence.cadence ||
-      profileVersion !== occurrence.profileVersion
-    ) {
-      await this.supersede(recipientId, occurrenceId, generation);
-      return null;
-    }
-    const rows = await db
+  /** Uses the account bound by the system work before reading preferences. */
+  public readPreferences(userId: string): Promise<ActivityEmailPreferences> {
+    const recipientId = this.scope.requireAccount(userId);
+    return this.bindings.readPreferences(this.scope.transaction, recipientId);
+  }
+
+  /** Maps authorization state without deciding whether the candidate can be emailed. */
+  public async listDeliveryDecisions(
+    userId: string,
+    occurrenceId: string,
+    generation: number,
+  ): Promise<readonly ActivityDeliveryDecision[]> {
+    const recipientId = this.scope.requireAccount(userId);
+    const rows = await this.scope.transaction.db
       .select({
-        candidate: candidates,
+        recipientId: candidates.recipientId,
+        kind: candidates.kind,
         outcome: attempts.outcome,
         validUntil: attempts.validUntil,
-        live: sql<boolean>`${attempts.validUntil} > clock_timestamp()`,
       })
       .from(candidates)
       .leftJoin(attempts, currentCandidate)
       .where(candidateBinding(recipientId, occurrenceId, generation))
       .orderBy(asc(candidates.id))
-      .limit(limit + 1);
-    if (rows.length > limit)
+      .limit(maxActivityDigestBatchSize + 1);
+    if (rows.length > maxActivityDigestBatchSize) {
       throw new Error('The activity email occurrence exceeds its lease bound.');
-
-    const items: ActivityEmailDelivery['items'][number][] = [];
-    for (const row of rows) {
-      const candidate = toCandidate(row.candidate);
-      if (!preferences.enabled[candidate.kind]) continue;
-      if (row.outcome === 'denied' && row.validUntil !== null) {
-        items.push({ candidate, decision: 'deny', validUntil: row.validUntil.getTime() });
-      } else if (row.outcome === 'permitted' && row.live && row.validUntil !== null) {
-        items.push({ candidate, decision: 'permit', validUntil: row.validUntil.getTime() });
-      } else {
-        return null;
-      }
     }
+    return rows.map((row) => ({ ...row, validUntil: row.validUntil?.getTime() ?? null }));
+  }
 
-    const [lease] = await db
+  /** Uses database time to record a new lease and its exclusive deadline. */
+  public async claim(
+    userId: string,
+    occurrenceId: string,
+    generation: number,
+  ): Promise<{ readonly id: string; readonly validUntil: number }> {
+    const recipientId = this.scope.requireAccount(userId);
+    const binding = scheduledOccurrence(recipientId, occurrenceId, generation);
+    const [lease] = await this.scope.transaction.db
       .update(occurrences)
       .set({
         leaseId: sql`uuidv7()`,
         leaseUntil: sql`clock_timestamp() + interval '60 seconds'`,
         updatedAt: databaseTime,
       })
-      .where(and(binding, availableLease()))
-      .returning({ id: occurrences.leaseId });
-    if (lease?.id == null)
+      .where(and(binding, availableLease(), lte(occurrences.dueAt, databaseTime)))
+      .returning({ id: occurrences.leaseId, until: occurrences.leaseUntil });
+    if (lease?.id == null || lease.until === null) {
       throw new Error('The activity email lease changed under its account lock.');
-    return {
-      occurrenceId,
-      generation,
-      leaseId: lease.id,
-      recipientId,
-      profileVersion,
-      preferencesVersion: preferences.version,
-      items,
-    };
+    }
+    return { id: lease.id, validUntil: lease.until.getTime() };
   }
 
   /** Consumes the occurrence only while the corresponding lease is live. */
@@ -316,12 +315,7 @@ export class DrizzleActivityDelivery implements ActivityDeliveryStore {
     leaseId: string,
   ): Promise<boolean> {
     const recipientId = this.scope.requireAccount(userId);
-    return this.complete(
-      recipientId,
-      occurrenceId,
-      generation,
-      and(eq(occurrences.leaseId, leaseId), gt(occurrences.leaseUntil, databaseTime)),
-    );
+    return this.complete(recipientId, occurrenceId, generation, activeLease(leaseId));
   }
 
   /** Releases only this worker's matching lease so it cannot overwrite a later retry. */
@@ -364,13 +358,16 @@ export class DrizzleActivityDelivery implements ActivityDeliveryStore {
     return true;
   }
 
-  /** Detaches the previous generation and enqueues one replanning job atomically. */
-  private async supersede(
-    recipientId: string,
+  /** Detaches only the generation whose unleased state or owned live lease still holds. */
+  public async supersede(
+    userId: string,
     occurrenceId: string,
     generation: number,
-  ): Promise<void> {
+    leaseId?: string,
+  ): Promise<boolean> {
+    const recipientId = this.scope.requireAccount(userId);
     const { db } = this.scope.transaction;
+    const guard = leaseId === undefined ? availableLease() : activeLease(leaseId);
     const changed = await db
       .update(occurrences)
       .set({
@@ -379,18 +376,20 @@ export class DrizzleActivityDelivery implements ActivityDeliveryStore {
         generation: sql`${occurrences.generation} + 1`,
         updatedAt: databaseTime,
       })
-      .where(and(scheduledOccurrence(recipientId, occurrenceId, generation), availableLease()))
+      .where(and(scheduledOccurrence(recipientId, occurrenceId, generation), guard))
       .returning({ id: occurrences.id });
-    if (changed.length !== 1)
-      throw new Error('The activity email occurrence changed under its account lock.');
+    if (changed.length === 0) return false;
     await db
       .update(candidates)
       .set({ occurrenceId: null, generation: null, updatedAt: databaseTime })
       .where(candidateBinding(recipientId, occurrenceId, generation));
-    await this.bindings.enqueuePlan(this.scope.transaction, {
-      userId: recipientId,
-      notBeforeMs: Date.now(),
-    });
+    return true;
+  }
+
+  /** Bridges the application-selected planning job into its current transaction. */
+  public enqueuePlan(userId: string, notBeforeMs: number): Promise<void> {
+    const recipientId = this.scope.requireAccount(userId);
+    return this.bindings.enqueuePlan(this.scope.transaction, { userId: recipientId, notBeforeMs });
   }
   // #endregion
 }

@@ -28,6 +28,14 @@ describe('DrizzleActivityDelivery', () => {
     await expect(
       store.finishAttempt(anotherTenant, correlation, 'denied', Date.now()),
     ).rejects.toThrow('Activity email tenant scope does not match');
+    await expect(
+      store.listAuthorizationCandidates(anotherTenant, correlation, correlation, 1),
+    ).rejects.toThrow('Activity email tenant scope does not match');
+    await expect(
+      store.reserveAuthorizationAttempts(anotherTenant, correlation, correlation, 1, 100, [
+        correlation,
+      ]),
+    ).rejects.toThrow('Activity email tenant scope does not match');
     expect(db.select).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
   });

@@ -1,19 +1,13 @@
-import type { ActivityEmailCandidate } from './activity-email-candidate.model.js';
+import type { ActivityEmailOccurrence } from '../../../domain/value-objects/digest/activity-email-occurrence.value-object.js';
 
-/** One leased bounded occurrence and its current Task authorization decisions. */
+/** Scheduling inputs for one due occurrence locked by the account worker. */
 export interface ActivityEmailDelivery {
   // #region Properties
   /** Values scoped to this operation. */
   readonly occurrenceId: string;
   readonly generation: number;
-  readonly leaseId: string;
   readonly recipientId: string;
+  readonly cadence: ActivityEmailOccurrence['cadence'];
   readonly profileVersion: number;
-  readonly preferencesVersion: number;
-  readonly items: readonly {
-    readonly candidate: ActivityEmailCandidate;
-    readonly decision: 'permit' | 'deny';
-    readonly validUntil: number;
-  }[];
   // #endregion
 }

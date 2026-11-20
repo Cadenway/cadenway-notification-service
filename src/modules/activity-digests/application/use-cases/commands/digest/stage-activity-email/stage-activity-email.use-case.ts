@@ -7,7 +7,10 @@ import type { StageActivityEmailOutput } from './stage-activity-email.output.js'
 export class StageActivityEmail {
   // #region Constructor
   /** Binds the transaction that also deduplicates a redelivered source event. */
-  public constructor(private readonly work: ActivityEmailUnitOfWork) {}
+  public constructor(
+    private readonly work: ActivityEmailUnitOfWork,
+    private readonly clock: () => number = Date.now,
+  ) {}
   // #endregion
 
   // #region Methods
@@ -24,9 +27,26 @@ export class StageActivityEmail {
       }
     }
     if (recipients.size === 0) return Promise.resolve(0);
-    return this.work.runTenant(input.source.organizationId, (store) =>
-      store.stage(input.source.organizationId, [...recipients.values()]),
-    );
+    const { organizationId } = input.source;
+    return this.work.runTenant(organizationId, async (store) => {
+      // Concurrent source facts can share recipients. Acquire preference locks in UUID order.
+      const eligible: ActivityEmailCandidate[] = [];
+      const ordered = [...recipients.values()].sort((left, right) =>
+        left.recipientId.localeCompare(right.recipientId),
+      );
+      for (const candidate of ordered) {
+        const { recipientId } = candidate;
+        const preferences = await store.lockIntakePreferences(organizationId, recipientId);
+        if (preferences.cadence !== 'never' && preferences.enabled[candidate.kind]) {
+          eligible.push(candidate);
+        }
+      }
+      if (eligible.length === 0) return 0;
+      const inserted = await store.insertCandidates(organizationId, eligible);
+      const notBeforeMs = this.clock();
+      for (const recipientId of inserted) await store.enqueuePlan(recipientId, notBeforeMs);
+      return inserted.length;
+    });
   }
   // #endregion
 }

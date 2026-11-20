@@ -1,8 +1,12 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 
+import type { ActivityEmailAssignment } from '../../../../../application/models/digest/activity-email-assignment.model.js';
 import type { ActivityEmailCandidate } from '../../../../../application/models/digest/activity-email-candidate.model.js';
+import type { ActivityEmailDigestSlot } from '../../../../../application/models/digest/activity-email-digest-slot.model.js';
 import type { ActivityEmailPreferences } from '../../../../../application/models/digest/activity-email-preferences.model.js';
+import type { ActivityEmailReservation } from '../../../../../application/models/digest/activity-email-reservation.model.js';
 import type { ActivityEmailStore } from '../../../../../application/ports/outbound/transactions/digest/activity-email-store.port.js';
+import { activityEmailPageSize } from '../../../../../domain/policies/digest/activity-email-schedule.policy.js';
 import type { ActivityEmailOccurrence } from '../../../../../domain/value-objects/digest/activity-email-occurrence.value-object.js';
 import { activityEmailCandidates as candidates } from '../../schemas/digest/activity-email-candidates.schema.js';
 import { activityEmailOccurrences as occurrences } from '../../schemas/digest/activity-email-occurrences.schema.js';
@@ -11,50 +15,23 @@ import type {
   ActivityDigestScope,
 } from '../../transactions/digest/drizzle-activity-digest.unit-of-work.js';
 
-type ScheduleValues = Pick<
-  typeof occurrences.$inferSelect,
-  'recipientId' | 'dueAt' | 'preferenceVersion' | 'profileVersion'
->;
-interface Reservation {
-  // #region Properties
-  /** Stable identifiers and whether this assignment reserved a new job. */
-  readonly candidateId: string;
-  readonly occurrenceId: string;
-  readonly generation: number;
-  readonly enqueue: boolean;
-  // #endregion
-}
-
 const insertBatchSize = 250;
+const digestBatchNumber = 1;
 
 /** Caps account work and tenant fan-out for a single occurrence. */
-export const maxActivityDigestBatchSize: number = 100;
+export const maxActivityDigestBatchSize: number = activityEmailPageSize;
 
-/** Checks explicit bounds before emitting a LIMIT. */
+/** Checks explicit bounds before emitting a LIMIT or writing a batch. */
 export function validateActivityDigestBatchSize(limit: number): void {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > maxActivityDigestBatchSize) {
     throw new RangeError('Activity email page size must be between 1 and 100.');
   }
 }
 
-/** Binds candidates to a stable occurrence and its current generation. */
-function assignment(
-  ids: readonly string[],
-  occurrence: { readonly id: string; readonly generation: number },
-  enqueue: boolean,
-): Reservation[] {
-  return ids.map((candidateId) => ({
-    candidateId,
-    occurrenceId: occurrence.id,
-    generation: occurrence.generation,
-    enqueue,
-  }));
-}
-
-/** Stages immutable candidates and assigns bounded account batches in the caller's transaction. */
+/** Maps candidate and occurrence state within the caller's bound transaction. */
 export class DrizzleActivityEmail implements ActivityEmailStore {
   // #region Constructor
-  /** Binds scheduling and job writes to one account or tenant transaction. */
+  /** Binds rows and transactional side effects to one account or tenant transaction. */
   public constructor(
     private readonly scope: ActivityDigestScope,
     private readonly bindings: Pick<
@@ -65,71 +42,55 @@ export class DrizzleActivityEmail implements ActivityEmailStore {
   // #endregion
 
   // #region Methods
-  /** Inserts each source-recipient pair once and schedules planning for newly inserted accounts. */
-  public async stage(
+  /** Reads the source recipient's settings within the verified tenant transaction. */
+  public lockIntakePreferences(
+    organizationId: string,
+    userId: string,
+  ): Promise<ActivityEmailPreferences> {
+    this.scope.requireTenant(organizationId);
+    return this.bindings.readPreferences(this.scope.transaction, userId);
+  }
+
+  /** Inserts the immutable source-recipient pairs in bounded SQL statements. */
+  public async insertCandidates(
     organizationId: string,
     values: readonly ActivityEmailCandidate[],
-  ): Promise<number> {
+  ): Promise<readonly string[]> {
     const tenantId = this.scope.requireTenant(organizationId);
     if (values.some((value) => value.organizationId.toLowerCase() !== tenantId)) {
       throw new Error('Activity email candidate belongs to another organization.');
     }
     const { db } = this.scope.transaction;
-    // Several source facts can name overlapping recipients. Acquire preference locks in UUID order.
-    const ordered = [...values].sort((left, right) =>
-      left.recipientId.localeCompare(right.recipientId),
-    );
-    const eligible: ActivityEmailCandidate[] = [];
-    for (const value of ordered) {
-      const preferences = await this.bindings.readPreferences(
-        this.scope.transaction,
-        value.recipientId,
-      );
-      if (preferences.cadence !== 'never' && preferences.enabled[value.kind]) eligible.push(value);
-    }
-    const notBeforeMs = Date.now();
-    let staged = 0;
-    for (let index = 0; index < eligible.length; index += insertBatchSize) {
+    const insertedAccounts: string[] = [];
+    for (let index = 0; index < values.length; index += insertBatchSize) {
       const inserted = await db
         .insert(candidates)
-        .values(eligible.slice(index, index + insertBatchSize))
+        .values(values.slice(index, index + insertBatchSize))
         .onConflictDoNothing({
           target: [candidates.organizationId, candidates.recipientId, candidates.sourceEventId],
         })
         .returning({ userId: candidates.recipientId });
-      for (const { userId } of inserted) {
-        await this.bindings.enqueuePlan(this.scope.transaction, { userId, notBeforeMs });
-      }
-      staged += inserted.length;
+      insertedAccounts.push(...inserted.map(({ userId }) => userId));
     }
-    return staged;
+    return insertedAccounts;
   }
 
-  /** Reads the current email choices under the bound account and preference transaction locks. */
+  /** Reads email choices under the account and preference locks. */
   public lockPreferences(userId: string): Promise<ActivityEmailPreferences> {
     return this.bindings.readPreferences(this.scope.transaction, this.scope.requireAccount(userId));
   }
 
-  /** Reserves only unassigned eligible candidates and writes their delivery jobs atomically. */
-  public async schedule(
+  /** Reads a bounded ordered page of unassigned candidates matching the supplied predicates. */
+  public async listPendingCandidateIds(
     userId: string,
-    preferences: ActivityEmailPreferences,
-    occurrence: ActivityEmailOccurrence,
+    kinds: readonly ActivityEmailCandidate['kind'][],
+    createdByMs: number | null,
     limit: number,
-  ): Promise<number> {
+  ): Promise<readonly string[]> {
     const recipientId = this.scope.requireAccount(userId);
     validateActivityDigestBatchSize(limit);
-    if (preferences.cadence !== occurrence.cadence) {
-      throw new Error('Activity email occurrence does not match the locked cadence.');
-    }
-    const kinds = (Object.keys(preferences.enabled) as ActivityEmailCandidate['kind'][]).filter(
-      (kind) => preferences.enabled[kind],
-    );
-    if (kinds.length === 0) return 0;
-
-    const { db } = this.scope.transaction;
-    const dueAt = new Date(occurrence.dueAtMs);
-    const selected = await db
+    if (kinds.length === 0) return [];
+    const rows = await this.scope.transaction.db
       .select({ id: candidates.id })
       .from(candidates)
       .where(
@@ -138,51 +99,29 @@ export class DrizzleActivityEmail implements ActivityEmailStore {
           isNull(candidates.occurrenceId),
           isNull(candidates.settledAt),
           inArray(candidates.kind, kinds),
-          occurrence.cadence === 'each' ? undefined : lte(candidates.createdAt, dueAt),
+          createdByMs === null ? undefined : lte(candidates.createdAt, new Date(createdByMs)),
         ),
       )
       .orderBy(asc(candidates.createdAt), asc(candidates.id))
       .limit(limit + 1);
-    if (selected.length === 0) return 0;
-
-    const ids = selected.slice(0, limit).map(({ id }) => id);
-    const values = {
-      recipientId,
-      dueAt,
-      preferenceVersion: preferences.version,
-      profileVersion: occurrence.profileVersion,
-    };
-    const batches =
-      occurrence.cadence === 'each'
-        ? await this.reserveIndividuals(values, ids)
-        : await this.reserveDigest(values, occurrence.cadence, occurrence.localDate, ids);
-    await this.assign(recipientId, batches);
-
-    const jobs = new Map(
-      batches.filter((row) => row.enqueue).map((row) => [row.occurrenceId, row.generation]),
-    );
-    for (const [occurrenceId, generation] of jobs) {
-      await this.bindings.enqueueDelivery(this.scope.transaction, {
-        userId: recipientId,
-        occurrenceId,
-        generation,
-        runAt: occurrence.dueAtMs,
-      });
-    }
-    if (selected.length > limit) {
-      await this.bindings.enqueuePlan(this.scope.transaction, {
-        userId: recipientId,
-        notBeforeMs: occurrence.dueAtMs,
-      });
-    }
-    return jobs.size;
+    return rows.map(({ id }) => id);
   }
 
-  /** Keeps an immediate occurrence's identity even when its generation needs a new profile. */
-  private async reserveIndividuals(
-    values: ScheduleValues,
+  /** Keeps an immediate occurrence's identity when its generation needs a new profile. */
+  public async reserveIndividuals(
+    userId: string,
+    occurrence: Extract<ActivityEmailOccurrence, { cadence: 'each' }>,
+    preferenceVersion: number,
     ids: readonly string[],
-  ): Promise<readonly Reservation[]> {
+  ): Promise<readonly ActivityEmailAssignment[]> {
+    const recipientId = this.scope.requireAccount(userId);
+    validateActivityDigestBatchSize(ids.length);
+    const values = {
+      recipientId,
+      dueAt: new Date(occurrence.dueAtMs),
+      preferenceVersion,
+      profileVersion: occurrence.profileVersion,
+    };
     const rows = await this.scope.transaction.db
       .insert(occurrences)
       .values(
@@ -208,96 +147,111 @@ export class DrizzleActivityEmail implements ActivityEmailStore {
     return rows.map(({ id, individualCandidateId, generation }) => {
       if (individualCandidateId === null)
         throw new Error('The immediate occurrence has no candidate.');
-      return { candidateId: individualCandidateId, occurrenceId: id, generation, enqueue: true };
+      return { candidateId: individualCandidateId, reservation: { id, generation } };
     });
   }
 
-  /** Extends today's open batch and allocates new work only when it cannot hold the page. */
-  private async reserveDigest(
-    values: ScheduleValues,
-    cadence: 'daily' | 'weekly',
-    localDate: string,
-    ids: readonly string[],
-  ): Promise<readonly Reservation[]> {
-    const { db } = this.scope.transaction;
-    const epoch = and(
-      eq(occurrences.recipientId, values.recipientId),
-      eq(occurrences.cadence, cadence),
-      eq(occurrences.localDate, localDate),
-    );
-    const [active] = await db
-      .select({ id: occurrences.id, generation: occurrences.generation })
+  /** Reads current scheduling state for the account's unique slot for this cadence and date. */
+  public async findDigestSlot(
+    userId: string,
+    occurrence: Exclude<ActivityEmailOccurrence, { cadence: 'each' }>,
+  ): Promise<ActivityEmailDigestSlot | null> {
+    const recipientId = this.scope.requireAccount(userId);
+    const [row] = await this.scope.transaction.db
+      .select({
+        id: occurrences.id,
+        generation: occurrences.generation,
+        state: occurrences.state,
+        dueAt: occurrences.dueAt,
+        profileVersion: occurrences.profileVersion,
+        acceptsAssignments: sql<boolean>`${occurrences.dueAt} > clock_timestamp() and ${occurrences.leaseId} is null`,
+      })
       .from(occurrences)
       .where(
         and(
-          epoch,
-          eq(occurrences.state, 'scheduled'),
-          eq(occurrences.preferenceVersion, values.preferenceVersion),
-          eq(occurrences.profileVersion, values.profileVersion),
-          eq(occurrences.dueAt, values.dueAt),
-          gt(occurrences.dueAt, sql`clock_timestamp()`),
-          isNull(occurrences.leaseId),
+          eq(occurrences.recipientId, recipientId),
+          eq(occurrences.cadence, occurrence.cadence),
+          eq(occurrences.localDate, occurrence.localDate),
+          eq(occurrences.batchNumber, digestBatchNumber),
         ),
       )
-      .orderBy(desc(occurrences.batchNumber))
       .limit(1);
-    const reserved: Reservation[] = [];
-    if (active !== undefined) {
-      const assigned = await db
-        .select({ id: candidates.id })
-        .from(candidates)
-        .where(
-          and(
-            eq(candidates.recipientId, values.recipientId),
-            eq(candidates.occurrenceId, active.id),
-            eq(candidates.generation, active.generation),
-          ),
-        )
-        .limit(maxActivityDigestBatchSize + 1);
-      validateActivityDigestBatchSize(assigned.length);
-      const capacity = maxActivityDigestBatchSize - assigned.length;
-      reserved.push(...assignment(ids.slice(0, capacity), active, false));
-    }
-    const remaining = ids.slice(reserved.length);
-    if (remaining.length === 0) return reserved;
-
-    const [previous] = await db
-      .select({ id: occurrences.id })
-      .from(occurrences)
-      .where(and(epoch, eq(occurrences.state, 'superseded')))
-      .orderBy(asc(occurrences.batchNumber))
-      .limit(1);
-    if (previous !== undefined) {
-      const [reopened] = await db
-        .update(occurrences)
-        .set({ ...values, state: 'scheduled', updatedAt: sql`clock_timestamp()` })
-        .where(and(epoch, eq(occurrences.id, previous.id), eq(occurrences.state, 'superseded')))
-        .returning({ id: occurrences.id, generation: occurrences.generation });
-      if (reopened === undefined)
-        throw new Error('The activity email batch changed under its account lock.');
-      return [...reserved, ...assignment(remaining, reopened, true)];
-    }
-
-    const [last] = await db
-      .select({ batchNumber: occurrences.batchNumber })
-      .from(occurrences)
-      .where(epoch)
-      .orderBy(desc(occurrences.batchNumber))
-      .limit(1);
-    const [inserted] = await db
-      .insert(occurrences)
-      .values({ ...values, cadence, localDate, batchNumber: (last?.batchNumber ?? 0) + 1 })
-      .returning({ id: occurrences.id, generation: occurrences.generation });
-    if (inserted === undefined) throw new Error('The activity email batch was not reserved.');
-    return [...reserved, ...assignment(remaining, inserted, true)];
+    if (row === undefined) return null;
+    const { dueAt, ...slot } = row;
+    return { ...slot, dueAtMs: dueAt.getTime() };
   }
 
-  /** Assigns the complete page in one statement and verifies that no candidate was already claimed. */
-  private async assign(recipientId: string, batch: readonly Reservation[]): Promise<void> {
+  /** Counts only rows assigned to the precise account and generation. */
+  public async countDigestAssignments(
+    userId: string,
+    reservation: ActivityEmailReservation,
+  ): Promise<number> {
+    const recipientId = this.scope.requireAccount(userId);
+    const rows = await this.scope.transaction.db
+      .select({ id: candidates.id })
+      .from(candidates)
+      .where(
+        and(
+          eq(candidates.recipientId, recipientId),
+          eq(candidates.occurrenceId, reservation.id),
+          eq(candidates.generation, reservation.generation),
+        ),
+      )
+      .limit(maxActivityDigestBatchSize + 1);
+    if (rows.length > maxActivityDigestBatchSize) {
+      throw new Error('The activity email occurrence exceeds its candidate limit.');
+    }
+    return rows.length;
+  }
+
+  /** Registers the account slot or conditionally reopens its superseded generation. */
+  public async reserveDigest(
+    userId: string,
+    occurrence: Exclude<ActivityEmailOccurrence, { cadence: 'each' }>,
+    preferenceVersion: number,
+  ): Promise<ActivityEmailReservation> {
+    const recipientId = this.scope.requireAccount(userId);
+    const values = {
+      recipientId,
+      dueAt: new Date(occurrence.dueAtMs),
+      preferenceVersion,
+      profileVersion: occurrence.profileVersion,
+    };
+    const [reserved] = await this.scope.transaction.db
+      .insert(occurrences)
+      .values({
+        ...values,
+        cadence: occurrence.cadence,
+        localDate: occurrence.localDate,
+        batchNumber: digestBatchNumber,
+      })
+      .onConflictDoUpdate({
+        target: [
+          occurrences.recipientId,
+          occurrences.cadence,
+          occurrences.localDate,
+          occurrences.batchNumber,
+        ],
+        set: { ...values, state: 'scheduled', updatedAt: sql`clock_timestamp()` },
+        setWhere: eq(occurrences.state, 'superseded'),
+      })
+      .returning({ id: occurrences.id, generation: occurrences.generation });
+    if (reserved === undefined)
+      throw new Error('The activity email slot changed under its account lock.');
+    return reserved;
+  }
+
+  /** Assigns the complete page and verifies that no candidate was already claimed. */
+  public async assignCandidates(
+    userId: string,
+    batch: readonly ActivityEmailAssignment[],
+  ): Promise<void> {
+    const recipientId = this.scope.requireAccount(userId);
+    validateActivityDigestBatchSize(batch.length);
     const values = sql.join(
       batch.map(
-        (row) =>
-          sql`(${row.candidateId}::uuid, ${row.occurrenceId}::uuid, ${row.generation}::integer)`,
+        ({ candidateId, reservation }) =>
+          sql`(${candidateId}::uuid, ${reservation.id}::uuid, ${reservation.generation}::integer)`,
       ),
       sql`, `,
     );
@@ -313,6 +267,27 @@ export class DrizzleActivityEmail implements ActivityEmailStore {
     if (changed.rowCount !== batch.length) {
       throw new Error('An activity email candidate changed under its account lock.');
     }
+  }
+
+  /** Writes the requested planning job in the same transaction as the candidate changes. */
+  public enqueuePlan(userId: string, notBeforeMs: number, runAt?: number): Promise<void> {
+    if (this.scope.transaction.kind === 'system') this.scope.requireAccount(userId);
+    return this.bindings.enqueuePlan(this.scope.transaction, { userId, notBeforeMs, runAt });
+  }
+
+  /** Writes the selected delivery job in the same transaction as its reservation. */
+  public enqueueDelivery(
+    userId: string,
+    reservation: ActivityEmailReservation,
+    dueAtMs: number,
+  ): Promise<void> {
+    const recipientId = this.scope.requireAccount(userId);
+    return this.bindings.enqueueDelivery(this.scope.transaction, {
+      userId: recipientId,
+      occurrenceId: reservation.id,
+      generation: reservation.generation,
+      runAt: dueAtMs,
+    });
   }
   // #endregion
 }

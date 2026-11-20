@@ -9,6 +9,9 @@ const localDigestHour = 9;
 const maximumLookaheadDays = 14;
 const maximumEpochMs = 8_640_000_000_000_000;
 
+/** Maximum candidates assigned to a single digest or an immediate planning pass. */
+export const activityEmailPageSize = 100;
+
 /**
  * Plans the earliest permitted occurrence at or after the supplied cutoff (epoch milliseconds).
  * Compte › Notifications and public `inbox.yaml` set immediate activity email, weekday digests at
