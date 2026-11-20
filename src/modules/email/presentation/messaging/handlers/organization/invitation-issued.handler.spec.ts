@@ -2,7 +2,7 @@ import { eventSchemas } from '@cadenway/contracts/events/organization-service';
 import type { InvitationIssuedV1 } from '@cadenway/contracts/events/organization-service';
 import type { EventConsumers, EventContext, EventSubscription } from '@cadenway/nest-messaging';
 import { Logger } from '@nestjs/common';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FixedClock,
   ImmediateUnitOfWork,
@@ -179,6 +179,27 @@ describe('InvitationIssuedHandler', () => {
     expect(sender.sent[0]?.text).toContain(
       `Rejoindre Atelier Nord : http://app.cadenway.localhost/invite/${invitationId}\n`,
     );
+  });
+
+  it('logs delivery correlation without the invitation link identifier', async () => {
+    const log = vi.spyOn(Logger.prototype, 'log');
+    const event: InvitationIssuedV1 = issuedEvent();
+    try {
+      await deliver(event);
+
+      expect(log).toHaveBeenCalledWith(
+        {
+          eventId: event.id,
+          organizationId: event.organizationId,
+          version: event.version,
+          deliveryId: queue.enqueued[0],
+          superseded: 0,
+        },
+        expect.any(String),
+      );
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('sends one e-mail when the same event is delivered again', async () => {

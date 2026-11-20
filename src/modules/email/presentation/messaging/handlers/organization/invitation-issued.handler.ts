@@ -151,7 +151,6 @@ export class InvitationIssuedHandler implements OnApplicationBootstrap {
     const fields: Readonly<Record<string, string | number>> = {
       eventId: payload.id,
       organizationId: payload.organizationId,
-      invitationId: payload.invitationId,
       version: payload.version,
     };
     switch (result.outcome) {
