@@ -138,6 +138,9 @@ export interface EmailConfig {
    * @readonly
    */
   readonly WEB_APP_URL: string;
+
+  /** Server-controlled mailbox for the public contact form, when the form is enabled. */
+  readonly SITE_CONTACT_SUPPORT_ADDRESS?: string;
   // #endregion
 }
 
@@ -195,6 +198,9 @@ export const appConfigSchema: z.ZodType<AppConfig> = z
     SMTP_USER: z.string().min(1).optional(),
     SMTP_PASSWORD: z.string().min(1).optional(),
     MAIL_FROM: z.email({ error: 'Expected the sender e-mail address.' }),
+    SITE_CONTACT_SUPPORT_ADDRESS: z
+      .email({ error: 'Expected the support e-mail address.' })
+      .optional(),
     WEB_APP_URL: z
       .url({ protocol: /^https?$/u, error: 'Expected the http:// or https:// origin of the app.' })
       .default(LOCAL_WEB_APP_URL)

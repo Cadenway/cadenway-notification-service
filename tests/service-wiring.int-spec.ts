@@ -119,10 +119,13 @@ const serviceTables = [
   'reminder_generations',
   'reminders',
   'security_email_deliveries',
+  'site_contact_receipts',
+  'site_contact_submissions',
+  'site_newsletter_subscriptions',
 ] as const;
 
 /** The migrations of the service, all applied by the migrator. */
-const migrationCount = 9;
+const migrationCount = 11;
 
 /**
  * Runs `docker compose` on the throwaway project.
@@ -574,6 +577,9 @@ describe('notification-service wiring', () => {
       { relname: 'reminder_generations', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'reminders', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'security_email_deliveries', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'site_contact_receipts', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'site_contact_submissions', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'site_newsletter_subscriptions', relrowsecurity: true, relforcerowsecurity: true },
     ]);
     expect(policies.rows).toEqual([
       {
@@ -634,6 +640,15 @@ describe('notification-service wiring', () => {
       {
         tablename: 'security_email_deliveries',
         policyname: 'security_email_deliveries_system_access',
+      },
+      { tablename: 'site_contact_receipts', policyname: 'site_contact_receipts_system_access' },
+      {
+        tablename: 'site_contact_submissions',
+        policyname: 'site_contact_submissions_system_access',
+      },
+      {
+        tablename: 'site_newsletter_subscriptions',
+        policyname: 'site_newsletter_subscriptions_system_access',
       },
     ]);
   });

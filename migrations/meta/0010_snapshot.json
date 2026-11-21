@@ -1,0 +1,3057 @@
+{
+  "id": "f3885fe8-0e81-4568-a76a-4083f9fea7d4",
+  "prevId": "0b58af91-9377-4086-9a7e-431c8479e92a",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.activity_email_authorization_attempts": {
+      "name": "activity_email_authorization_attempts",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "recipient_id": {
+          "name": "recipient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "candidate_id": {
+          "name": "candidate_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurrence_id": {
+          "name": "occurrence_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valid_until": {
+          "name": "valid_until",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "activity_email_authorization_attempts_candidate_fk": {
+          "name": "activity_email_authorization_attempts_candidate_fk",
+          "tableFrom": "activity_email_authorization_attempts",
+          "tableTo": "activity_email_candidates",
+          "columnsFrom": [
+            "organization_id",
+            "candidate_id",
+            "recipient_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id",
+            "recipient_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "activity_email_authorization_attempts_occurrence_fk": {
+          "name": "activity_email_authorization_attempts_occurrence_fk",
+          "tableFrom": "activity_email_authorization_attempts",
+          "tableTo": "activity_email_occurrences",
+          "columnsFrom": [
+            "recipient_id",
+            "occurrence_id"
+          ],
+          "columnsTo": [
+            "recipient_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "activity_email_authorization_attempts_pkey": {
+          "name": "activity_email_authorization_attempts_pkey",
+          "columns": [
+            "organization_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "activity_email_authorization_attempts_item_unique": {
+          "name": "activity_email_authorization_attempts_item_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "candidate_id",
+            "recipient_id",
+            "occurrence_id",
+            "generation"
+          ]
+        }
+      },
+      "policies": {
+        "activity_email_authorization_attempts_tenant_isolation": {
+          "name": "activity_email_authorization_attempts_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "activity_email_authorization_attempts_generation_check": {
+          "name": "activity_email_authorization_attempts_generation_check",
+          "value": "\"activity_email_authorization_attempts\".\"generation\" >= 1"
+        },
+        "activity_email_authorization_attempts_outcome_check": {
+          "name": "activity_email_authorization_attempts_outcome_check",
+          "value": "(\"activity_email_authorization_attempts\".\"outcome\" = 'pending' and \"activity_email_authorization_attempts\".\"valid_until\" is null)\n        or (\"activity_email_authorization_attempts\".\"outcome\" in ('permitted', 'denied', 'expired') and \"activity_email_authorization_attempts\".\"valid_until\" is not null and \"activity_email_authorization_attempts\".\"valid_until\" <= \"activity_email_authorization_attempts\".\"expires_at\")"
+        },
+        "activity_email_authorization_attempts_expiry_check": {
+          "name": "activity_email_authorization_attempts_expiry_check",
+          "value": "\"activity_email_authorization_attempts\".\"expires_at\" > \"activity_email_authorization_attempts\".\"created_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.activity_email_candidates": {
+      "name": "activity_email_candidates",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "recipient_id": {
+          "name": "recipient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_event_id": {
+          "name": "source_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "task_key": {
+          "name": "task_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "comment_id": {
+          "name": "comment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurrence_id": {
+          "name": "occurrence_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "settled_at": {
+          "name": "settled_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "activity_email_candidates_pending_recipient_idx": {
+          "name": "activity_email_candidates_pending_recipient_idx",
+          "columns": [
+            {
+              "expression": "recipient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"activity_email_candidates\".\"occurrence_id\" is null and \"activity_email_candidates\".\"settled_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "activity_email_candidates_account_occurrence_idx": {
+          "name": "activity_email_candidates_account_occurrence_idx",
+          "columns": [
+            {
+              "expression": "recipient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurrence_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "generation",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "activity_email_candidates_tenant_occurrence_idx": {
+          "name": "activity_email_candidates_tenant_occurrence_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recipient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurrence_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "generation",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "activity_email_candidates_occurrence_fk": {
+          "name": "activity_email_candidates_occurrence_fk",
+          "tableFrom": "activity_email_candidates",
+          "tableTo": "activity_email_occurrences",
+          "columnsFrom": [
+            "recipient_id",
+            "occurrence_id"
+          ],
+          "columnsTo": [
+            "recipient_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "activity_email_candidates_pkey": {
+          "name": "activity_email_candidates_pkey",
+          "columns": [
+            "organization_id",
+            "id",
+            "recipient_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "activity_email_candidates_recipient_id_unique": {
+          "name": "activity_email_candidates_recipient_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "recipient_id",
+            "id"
+          ]
+        },
+        "activity_email_candidates_source_recipient_unique": {
+          "name": "activity_email_candidates_source_recipient_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "recipient_id",
+            "source_event_id"
+          ]
+        }
+      },
+      "policies": {
+        "activity_email_candidates_tenant_isolation": {
+          "name": "activity_email_candidates_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "activity_email_candidates_kind_check": {
+          "name": "activity_email_candidates_kind_check",
+          "value": "\"activity_email_candidates\".\"kind\" in ('assignment', 'comment', 'mention', 'status-change', 'approval', 'access')"
+        },
+        "activity_email_candidates_actor_check": {
+          "name": "activity_email_candidates_actor_check",
+          "value": "\"activity_email_candidates\".\"actor_user_id\" is distinct from \"activity_email_candidates\".\"recipient_id\""
+        },
+        "activity_email_candidates_assignment_check": {
+          "name": "activity_email_candidates_assignment_check",
+          "value": "(\"activity_email_candidates\".\"occurrence_id\" is null and \"activity_email_candidates\".\"generation\" is null and \"activity_email_candidates\".\"settled_at\" is null)\n        or (\"activity_email_candidates\".\"occurrence_id\" is not null and \"activity_email_candidates\".\"generation\" is not null and \"activity_email_candidates\".\"generation\" >= 1)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.activity_email_occurrences": {
+      "name": "activity_email_occurrences",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "recipient_id": {
+          "name": "recipient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cadence": {
+          "name": "cadence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "local_date": {
+          "name": "local_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "batch_number": {
+          "name": "batch_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "individual_candidate_id": {
+          "name": "individual_candidate_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "due_at": {
+          "name": "due_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "preference_version": {
+          "name": "preference_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "profile_version": {
+          "name": "profile_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'scheduled'"
+        },
+        "lease_id": {
+          "name": "lease_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_until": {
+          "name": "lease_until",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "activity_email_occurrences_superseded_idx": {
+          "name": "activity_email_occurrences_superseded_idx",
+          "columns": [
+            {
+              "expression": "recipient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "cadence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "local_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "batch_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"activity_email_occurrences\".\"state\" = 'superseded'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "activity_email_occurrences_recipient_id_unique": {
+          "name": "activity_email_occurrences_recipient_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "recipient_id",
+            "id"
+          ]
+        },
+        "activity_email_occurrences_epoch_batch_unique": {
+          "name": "activity_email_occurrences_epoch_batch_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "recipient_id",
+            "cadence",
+            "local_date",
+            "batch_number"
+          ]
+        },
+        "activity_email_occurrences_individual_unique": {
+          "name": "activity_email_occurrences_individual_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "recipient_id",
+            "individual_candidate_id"
+          ]
+        }
+      },
+      "policies": {
+        "activity_email_occurrences_system_access": {
+          "name": "activity_email_occurrences_system_access",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('app.system_access', true) = 'on'",
+          "withCheck": "current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "activity_email_occurrences_identity_check": {
+          "name": "activity_email_occurrences_identity_check",
+          "value": "(\"activity_email_occurrences\".\"cadence\" = 'each' and \"activity_email_occurrences\".\"individual_candidate_id\" is not null and \"activity_email_occurrences\".\"local_date\" is null and \"activity_email_occurrences\".\"batch_number\" is null)\n        or (\"activity_email_occurrences\".\"cadence\" in ('daily', 'weekly') and \"activity_email_occurrences\".\"individual_candidate_id\" is null and \"activity_email_occurrences\".\"local_date\" is not null and \"activity_email_occurrences\".\"batch_number\" is not null and \"activity_email_occurrences\".\"batch_number\" >= 1)"
+        },
+        "activity_email_occurrences_versions_check": {
+          "name": "activity_email_occurrences_versions_check",
+          "value": "\"activity_email_occurrences\".\"generation\" >= 1 and \"activity_email_occurrences\".\"preference_version\" >= 1 and \"activity_email_occurrences\".\"profile_version\" >= 1"
+        },
+        "activity_email_occurrences_lease_check": {
+          "name": "activity_email_occurrences_lease_check",
+          "value": "\"activity_email_occurrences\".\"state\" in ('scheduled', 'superseded', 'completed')\n        and (\"activity_email_occurrences\".\"lease_id\" is null) = (\"activity_email_occurrences\".\"lease_until\" is null)\n        and (\"activity_email_occurrences\".\"state\" = 'scheduled' or \"activity_email_occurrences\".\"lease_id\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.code_email_deliveries": {
+      "name": "code_email_deliveries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_id": {
+          "name": "code_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "skip_reason": {
+          "name": "skip_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "code_email_deliveries_queued_expires_at_index": {
+          "name": "code_email_deliveries_queued_expires_at_index",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"code_email_deliveries\".\"status\" = 'queued'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "code_email_deliveries_event_id_unique": {
+          "name": "code_email_deliveries_event_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "event_id"
+          ]
+        }
+      },
+      "policies": {
+        "code_email_deliveries_system_access": {
+          "name": "code_email_deliveries_system_access",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('app.system_access', true) = 'on'",
+          "withCheck": "current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "code_email_deliveries_purpose_check": {
+          "name": "code_email_deliveries_purpose_check",
+          "value": "\"code_email_deliveries\".\"purpose\" in ('email-verification', 'sign-in', 'email-change')"
+        },
+        "code_email_deliveries_status_check": {
+          "name": "code_email_deliveries_status_check",
+          "value": "\"code_email_deliveries\".\"status\" in ('queued', 'sent', 'skipped', 'failed')"
+        },
+        "code_email_deliveries_skip_reason_check": {
+          "name": "code_email_deliveries_skip_reason_check",
+          "value": "(\"code_email_deliveries\".\"status\" = 'skipped') = (\"code_email_deliveries\".\"skip_reason\" is not null) and (\"code_email_deliveries\".\"skip_reason\" is null or \"code_email_deliveries\".\"skip_reason\" in ('expired', 'purpose-not-supported'))"
+        },
+        "code_email_deliveries_sent_at_check": {
+          "name": "code_email_deliveries_sent_at_check",
+          "value": "(\"code_email_deliveries\".\"status\" = 'sent') = (\"code_email_deliveries\".\"sent_at\" is not null)"
+        },
+        "code_email_deliveries_validity_check": {
+          "name": "code_email_deliveries_validity_check",
+          "value": "\"code_email_deliveries\".\"expires_at\" > \"code_email_deliveries\".\"issued_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.pending_code_emails": {
+      "name": "pending_code_emails",
+      "schema": "",
+      "columns": {
+        "delivery_id": {
+          "name": "delivery_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient_email": {
+          "name": "recipient_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient_name": {
+          "name": "recipient_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "pending_code_emails_expires_at_index": {
+          "name": "pending_code_emails_expires_at_index",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pending_code_emails_delivery_id_code_email_deliveries_id_fk": {
+          "name": "pending_code_emails_delivery_id_code_email_deliveries_id_fk",
+          "tableFrom": "pending_code_emails",
+          "tableTo": "code_email_deliveries",
+          "columnsFrom": [
+            "delivery_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "pending_code_emails_system_access": {
+          "name": "pending_code_emails_system_access",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('app.system_access', true) = 'on'",
+          "withCheck": "current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "pending_code_emails_code_check": {
+          "name": "pending_code_emails_code_check",
+          "value": "\"pending_code_emails\".\"code\" ~ '^[0-9]{6}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.invitation_email_deliveries": {
+      "name": "invitation_email_deliveries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "invitation_id": {
+          "name": "invitation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "invitation_version": {
+          "name": "invitation_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "skip_reason": {
+          "name": "skip_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "invitation_email_deliveries_invitation_index": {
+          "name": "invitation_email_deliveries_invitation_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "invitation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "invitation_email_deliveries_queued_expires_at_index": {
+          "name": "invitation_email_deliveries_queued_expires_at_index",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"invitation_email_deliveries\".\"status\" = 'queued'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "invitation_email_deliveries_organization_id_event_id_unique": {
+          "name": "invitation_email_deliveries_organization_id_event_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "event_id"
+          ]
+        }
+      },
+      "policies": {
+        "invitation_email_deliveries_organization_isolation": {
+          "name": "invitation_email_deliveries_organization_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "invitation_email_deliveries_invitation_version_check": {
+          "name": "invitation_email_deliveries_invitation_version_check",
+          "value": "\"invitation_email_deliveries\".\"invitation_version\" >= 1"
+        },
+        "invitation_email_deliveries_role_check": {
+          "name": "invitation_email_deliveries_role_check",
+          "value": "\"invitation_email_deliveries\".\"role\" in ('admin', 'member', 'guest')"
+        },
+        "invitation_email_deliveries_status_check": {
+          "name": "invitation_email_deliveries_status_check",
+          "value": "\"invitation_email_deliveries\".\"status\" in ('queued', 'sent', 'skipped', 'failed')"
+        },
+        "invitation_email_deliveries_skip_reason_check": {
+          "name": "invitation_email_deliveries_skip_reason_check",
+          "value": "(\"invitation_email_deliveries\".\"status\" = 'skipped') = (\"invitation_email_deliveries\".\"skip_reason\" is not null) and (\"invitation_email_deliveries\".\"skip_reason\" is null or \"invitation_email_deliveries\".\"skip_reason\" in ('expired', 'superseded'))"
+        },
+        "invitation_email_deliveries_sent_at_check": {
+          "name": "invitation_email_deliveries_sent_at_check",
+          "value": "(\"invitation_email_deliveries\".\"status\" = 'sent') = (\"invitation_email_deliveries\".\"sent_at\" is not null)"
+        },
+        "invitation_email_deliveries_validity_check": {
+          "name": "invitation_email_deliveries_validity_check",
+          "value": "\"invitation_email_deliveries\".\"expires_at\" > \"invitation_email_deliveries\".\"issued_at\" and \"invitation_email_deliveries\".\"expires_at\" <= \"invitation_email_deliveries\".\"issued_at\" + interval '8 days'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.pending_invitation_emails": {
+      "name": "pending_invitation_emails",
+      "schema": "",
+      "columns": {
+        "delivery_id": {
+          "name": "delivery_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient_email": {
+          "name": "recipient_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "inviter_name": {
+          "name": "inviter_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_name": {
+          "name": "organization_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "member_count": {
+          "name": "member_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "pending_invitation_emails_expires_at_index": {
+          "name": "pending_invitation_emails_expires_at_index",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pending_invitation_emails_delivery_id_invitation_email_deliveries_id_fk": {
+          "name": "pending_invitation_emails_delivery_id_invitation_email_deliveries_id_fk",
+          "tableFrom": "pending_invitation_emails",
+          "tableTo": "invitation_email_deliveries",
+          "columnsFrom": [
+            "delivery_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "pending_invitation_emails_organization_isolation": {
+          "name": "pending_invitation_emails_organization_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "pending_invitation_emails_member_count_check": {
+          "name": "pending_invitation_emails_member_count_check",
+          "value": "\"pending_invitation_emails\".\"member_count\" >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.pending_security_emails": {
+      "name": "pending_security_emails",
+      "schema": "",
+      "columns": {
+        "delivery_id": {
+          "name": "delivery_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "recipient_email": {
+          "name": "recipient_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient_name": {
+          "name": "recipient_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "time_zone": {
+          "name": "time_zone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "details": {
+          "name": "details",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "send_before": {
+          "name": "send_before",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "pending_security_emails_send_before_index": {
+          "name": "pending_security_emails_send_before_index",
+          "columns": [
+            {
+              "expression": "send_before",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pending_security_emails_delivery_id_security_email_deliveries_id_fk": {
+          "name": "pending_security_emails_delivery_id_security_email_deliveries_id_fk",
+          "tableFrom": "pending_security_emails",
+          "tableTo": "security_email_deliveries",
+          "columnsFrom": [
+            "delivery_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "pending_security_emails_system_access": {
+          "name": "pending_security_emails_system_access",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('app.system_access', true) = 'on'",
+          "withCheck": "current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "pending_security_emails_token_check": {
+          "name": "pending_security_emails_token_check",
+          "value": "\"pending_security_emails\".\"token\" is null or \"pending_security_emails\".\"token\" ~ '^[A-Za-z0-9_-]{32,128}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.security_email_deliveries": {
+      "name": "security_email_deliveries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "template": {
+          "name": "template",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "language": {
+          "name": "language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "send_before": {
+          "name": "send_before",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "skip_reason": {
+          "name": "skip_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "security_email_deliveries_queued_send_before_index": {
+          "name": "security_email_deliveries_queued_send_before_index",
+          "columns": [
+            {
+              "expression": "send_before",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"security_email_deliveries\".\"status\" = 'queued'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "security_email_deliveries_event_id_unique": {
+          "name": "security_email_deliveries_event_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "event_id"
+          ]
+        }
+      },
+      "policies": {
+        "security_email_deliveries_system_access": {
+          "name": "security_email_deliveries_system_access",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('app.system_access', true) = 'on'",
+          "withCheck": "current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "security_email_deliveries_template_check": {
+          "name": "security_email_deliveries_template_check",
+          "value": "(\"security_email_deliveries\".\"template\" is null) = (\"security_email_deliveries\".\"skip_reason\" is not distinct from 'change-not-supported') and (\"security_email_deliveries\".\"template\" is null or \"security_email_deliveries\".\"template\" in ('password-reset', 'password-changed', 'email-changed', 'new-device', 'deletion-scheduled', 'deletion-cancelled', 'two-step-enabled', 'two-step-disabled', 'authenticator-app-replaced', 'backup-codes-regenerated', 'security-key-added', 'security-key-removed'))"
+        },
+        "security_email_deliveries_status_check": {
+          "name": "security_email_deliveries_status_check",
+          "value": "\"security_email_deliveries\".\"status\" in ('queued', 'sent', 'skipped', 'failed')"
+        },
+        "security_email_deliveries_skip_reason_check": {
+          "name": "security_email_deliveries_skip_reason_check",
+          "value": "(\"security_email_deliveries\".\"status\" = 'skipped') = (\"security_email_deliveries\".\"skip_reason\" is not null) and (\"security_email_deliveries\".\"skip_reason\" is null or \"security_email_deliveries\".\"skip_reason\" in ('expired', 'change-not-supported'))"
+        },
+        "security_email_deliveries_sent_at_check": {
+          "name": "security_email_deliveries_sent_at_check",
+          "value": "(\"security_email_deliveries\".\"status\" = 'sent') = (\"security_email_deliveries\".\"sent_at\" is not null)"
+        },
+        "security_email_deliveries_window_check": {
+          "name": "security_email_deliveries_window_check",
+          "value": "\"security_email_deliveries\".\"send_before\" > \"security_email_deliveries\".\"occurred_at\" and \"security_email_deliveries\".\"send_before\" <= \"security_email_deliveries\".\"occurred_at\" + interval '1 day'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.inbox_delivery_authorization_attempts": {
+      "name": "inbox_delivery_authorization_attempts",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "recipient_id": {
+          "name": "recipient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_event_id": {
+          "name": "source_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "task_key": {
+          "name": "task_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "comment_id": {
+          "name": "comment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "inbox_delivery_authorization_attempts_pkey": {
+          "name": "inbox_delivery_authorization_attempts_pkey",
+          "columns": [
+            "organization_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "inbox_delivery_attempts_source_recipient_unique": {
+          "name": "inbox_delivery_attempts_source_recipient_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "recipient_id",
+            "source_event_id"
+          ]
+        }
+      },
+      "policies": {
+        "inbox_delivery_attempts_organization_isolation": {
+          "name": "inbox_delivery_attempts_organization_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "inbox_delivery_attempts_outcome_check": {
+          "name": "inbox_delivery_attempts_outcome_check",
+          "value": "\"inbox_delivery_authorization_attempts\".\"outcome\" in ('pending', 'permitted', 'denied', 'expired')"
+        },
+        "inbox_delivery_attempts_kind_check": {
+          "name": "inbox_delivery_attempts_kind_check",
+          "value": "\"inbox_delivery_authorization_attempts\".\"kind\" in ('assignment', 'comment', 'mention', 'status-change', 'approval', 'access')"
+        },
+        "inbox_delivery_attempts_distinct_actor_check": {
+          "name": "inbox_delivery_attempts_distinct_actor_check",
+          "value": "\"inbox_delivery_authorization_attempts\".\"actor_user_id\" is distinct from \"inbox_delivery_authorization_attempts\".\"recipient_id\""
+        },
+        "inbox_delivery_attempts_deadline_check": {
+          "name": "inbox_delivery_attempts_deadline_check",
+          "value": "\"inbox_delivery_authorization_attempts\".\"expires_at\" > \"inbox_delivery_authorization_attempts\".\"created_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.inbox_generations": {
+      "name": "inbox_generations",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient_id": {
+          "name": "recipient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "inbox_generations_organization_id_recipient_id_pk": {
+          "name": "inbox_generations_organization_id_recipient_id_pk",
+          "columns": [
+            "organization_id",
+            "recipient_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "inbox_generations_organization_isolation": {
+          "name": "inbox_generations_organization_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "inbox_generations_nonnegative_check": {
+          "name": "inbox_generations_nonnegative_check",
+          "value": "\"inbox_generations\".\"generation\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.inbox_notifications": {
+      "name": "inbox_notifications",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient_id": {
+          "name": "recipient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_event_id": {
+          "name": "source_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subject_kind": {
+          "name": "subject_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subject_value": {
+          "name": "subject_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "comment_id": {
+          "name": "comment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "creation_generation": {
+          "name": "creation_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "read_at": {
+          "name": "read_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "inbox_notifications_recipient_page_index": {
+          "name": "inbox_notifications_recipient_page_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recipient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "inbox_notifications_unread_page_index": {
+          "name": "inbox_notifications_unread_page_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recipient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"inbox_notifications\".\"read_at\" is null and \"inbox_notifications\".\"archived_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "inbox_notifications_archived_page_index": {
+          "name": "inbox_notifications_archived_page_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recipient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"inbox_notifications\".\"archived_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "inbox_notifications_unread_subject_index": {
+          "name": "inbox_notifications_unread_subject_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recipient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject_value",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"inbox_notifications\".\"read_at\" is null and \"inbox_notifications\".\"archived_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "inbox_notifications_source_recipient_unique": {
+          "name": "inbox_notifications_source_recipient_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "recipient_id",
+            "source_event_id"
+          ]
+        }
+      },
+      "policies": {
+        "inbox_notifications_organization_isolation": {
+          "name": "inbox_notifications_organization_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "inbox_notifications_version_check": {
+          "name": "inbox_notifications_version_check",
+          "value": "\"inbox_notifications\".\"version\" >= 1"
+        },
+        "inbox_notifications_generation_check": {
+          "name": "inbox_notifications_generation_check",
+          "value": "\"inbox_notifications\".\"creation_generation\" >= 1"
+        },
+        "inbox_notifications_subject_check": {
+          "name": "inbox_notifications_subject_check",
+          "value": "((\"inbox_notifications\".\"subject_kind\" is null and \"inbox_notifications\".\"subject_value\" is null)\n        or (\"inbox_notifications\".\"subject_kind\" = 'task-key' and \"inbox_notifications\".\"subject_value\" ~ '^[A-Z]{2,5}-[1-9][0-9]{0,8}$')\n        or (\"inbox_notifications\".\"subject_kind\" in ('task-id', 'space', 'list') and \"inbox_notifications\".\"subject_value\" ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')) is true"
+        },
+        "inbox_notifications_time_check": {
+          "name": "inbox_notifications_time_check",
+          "value": "\"inbox_notifications\".\"updated_at\" >= \"inbox_notifications\".\"created_at\" and (\"inbox_notifications\".\"read_at\" is null or \"inbox_notifications\".\"read_at\" >= \"inbox_notifications\".\"created_at\") and (\"inbox_notifications\".\"archived_at\" is null or \"inbox_notifications\".\"archived_at\" >= \"inbox_notifications\".\"created_at\")"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.notification_preferences": {
+      "name": "notification_preferences",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "channels": {
+          "name": "channels",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "digest": {
+          "name": "digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "do_not_disturb": {
+          "name": "do_not_disturb",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "notification_preferences_system_access": {
+          "name": "notification_preferences_system_access",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('app.system_access', true) = 'on'",
+          "withCheck": "current_setting('app.system_access', true) = 'on'"
+        },
+        "notification_preferences_recipient_read": {
+          "name": "notification_preferences_recipient_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "nullif(current_setting('app.organization_id', true), '') is not null and \"notification_preferences\".\"user_id\" = nullif(current_setting('app.notification_recipient_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "notification_preferences_digest_check": {
+          "name": "notification_preferences_digest_check",
+          "value": "\"notification_preferences\".\"digest\" in ('each', 'daily', 'weekly', 'never')"
+        },
+        "notification_preferences_version_check": {
+          "name": "notification_preferences_version_check",
+          "value": "\"notification_preferences\".\"version\" >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.idempotency_keys": {
+      "name": "idempotency_keys",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_fingerprint": {
+          "name": "request_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "response_status": {
+          "name": "response_status",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "response_headers": {
+          "name": "response_headers",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "response_body": {
+          "name": "response_body",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idempotency_keys_expires_at_index": {
+          "name": "idempotency_keys_expires_at_index",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "idempotency_keys_organization_key_unique": {
+          "name": "idempotency_keys_organization_key_unique",
+          "nullsNotDistinct": true,
+          "columns": [
+            "organization_id",
+            "key"
+          ]
+        }
+      },
+      "policies": {
+        "idempotency_keys_organization_isolation": {
+          "name": "idempotency_keys_organization_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.event_versions": {
+      "name": "event_versions",
+      "schema": "",
+      "columns": {
+        "consumer": {
+          "name": "consumer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aggregate_key": {
+          "name": "aggregate_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "event_versions_aggregate_unique": {
+          "name": "event_versions_aggregate_unique",
+          "nullsNotDistinct": true,
+          "columns": [
+            "consumer",
+            "organization_id",
+            "aggregate_key"
+          ]
+        }
+      },
+      "policies": {
+        "event_versions_organization_isolation": {
+          "name": "event_versions_organization_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.outbox_events": {
+      "name": "outbox_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "event_name": {
+          "name": "event_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stream": {
+          "name": "stream",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "traceparent": {
+          "name": "traceparent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "outbox_events_pending_index": {
+          "name": "outbox_events_pending_index",
+          "columns": [
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"outbox_events\".\"status\" = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "outbox_events_sent_at_index": {
+          "name": "outbox_events_sent_at_index",
+          "columns": [
+            {
+              "expression": "sent_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"outbox_events\".\"status\" = 'sent'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "outbox_events_organization_isolation": {
+          "name": "outbox_events_organization_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "outbox_events_status_check": {
+          "name": "outbox_events_status_check",
+          "value": "\"outbox_events\".\"status\" in ('pending', 'sent', 'failed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.processed_events": {
+      "name": "processed_events",
+      "schema": "",
+      "columns": {
+        "consumer": {
+          "name": "consumer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "processed_events_processed_at_index": {
+          "name": "processed_events_processed_at_index",
+          "columns": [
+            {
+              "expression": "processed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "processed_events_pkey": {
+          "name": "processed_events_pkey",
+          "columns": [
+            "consumer",
+            "event_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.reminder_authorization_attempts": {
+      "name": "reminder_authorization_attempts",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reminder_id": {
+          "name": "reminder_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reminder_version": {
+          "name": "reminder_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "schedule_version": {
+          "name": "schedule_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "current": {
+          "name": "current",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {
+        "reminder_authorization_attempts_current_unique": {
+          "name": "reminder_authorization_attempts_current_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reminder_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"reminder_authorization_attempts\".\"current\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reminder_authorization_attempts_expiry_index": {
+          "name": "reminder_authorization_attempts_expiry_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reminder_authorization_attempts_reminder_fkey": {
+          "name": "reminder_authorization_attempts_reminder_fkey",
+          "tableFrom": "reminder_authorization_attempts",
+          "tableTo": "reminders",
+          "columnsFrom": [
+            "organization_id",
+            "reminder_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "reminder_authorization_attempts_pkey": {
+          "name": "reminder_authorization_attempts_pkey",
+          "columns": [
+            "organization_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "reminder_authorization_attempts_organization_isolation": {
+          "name": "reminder_authorization_attempts_organization_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "reminder_authorization_attempts_status_check": {
+          "name": "reminder_authorization_attempts_status_check",
+          "value": "\"reminder_authorization_attempts\".\"status\" in ('pending', 'permitted', 'denied', 'expired')"
+        },
+        "reminder_authorization_attempts_version_check": {
+          "name": "reminder_authorization_attempts_version_check",
+          "value": "\"reminder_authorization_attempts\".\"schedule_version\" >= 1 and \"reminder_authorization_attempts\".\"reminder_version\" >= \"reminder_authorization_attempts\".\"schedule_version\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.reminder_generations": {
+      "name": "reminder_generations",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "reminder_generations_organization_id_user_id_pk": {
+          "name": "reminder_generations_organization_id_user_id_pk",
+          "columns": [
+            "organization_id",
+            "user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "reminder_generations_organization_isolation": {
+          "name": "reminder_generations_organization_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "reminder_generations_nonnegative_check": {
+          "name": "reminder_generations_nonnegative_check",
+          "value": "\"reminder_generations\".\"generation\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.reminders": {
+      "name": "reminders",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "remind_at": {
+          "name": "remind_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fired_at": {
+          "name": "fired_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "schedule_version": {
+          "name": "schedule_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "reminders_pending_task_unique": {
+          "name": "reminders_pending_task_unique",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "task_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"reminders\".\"completed_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reminders_owner_page_index": {
+          "name": "reminders_owner_page_index",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "remind_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "reminders_pkey": {
+          "name": "reminders_pkey",
+          "columns": [
+            "organization_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "reminders_organization_isolation": {
+          "name": "reminders_organization_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'",
+          "withCheck": "organization_id = nullif(current_setting('app.organization_id', true), '')::uuid or current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "reminders_version_check": {
+          "name": "reminders_version_check",
+          "value": "\"reminders\".\"schedule_version\" >= 1 and \"reminders\".\"version\" >= \"reminders\".\"schedule_version\""
+        },
+        "reminders_time_check": {
+          "name": "reminders_time_check",
+          "value": "\"reminders\".\"remind_at\" > \"reminders\".\"created_at\" and (\"reminders\".\"fired_at\" is null or \"reminders\".\"fired_at\" >= \"reminders\".\"remind_at\") and (\"reminders\".\"completed_at\" is null or \"reminders\".\"completed_at\" >= coalesce(\"reminders\".\"fired_at\", \"reminders\".\"created_at\"))"
+        },
+        "reminders_note_check": {
+          "name": "reminders_note_check",
+          "value": "\"reminders\".\"note\" is null or char_length(\"reminders\".\"note\") <= 500"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.site_contact_receipts": {
+      "name": "site_contact_receipts",
+      "schema": "",
+      "columns": {
+        "key_hash": {
+          "name": "key_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "submission_id": {
+          "name": "submission_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "site_contact_receipts_expiration_index": {
+          "name": "site_contact_receipts_expiration_index",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "site_contact_receipts_submission_id_site_contact_submissions_id_fk": {
+          "name": "site_contact_receipts_submission_id_site_contact_submissions_id_fk",
+          "tableFrom": "site_contact_receipts",
+          "tableTo": "site_contact_submissions",
+          "columnsFrom": [
+            "submission_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "site_contact_receipts_system_access": {
+          "name": "site_contact_receipts_system_access",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('app.system_access', true) = 'on'",
+          "withCheck": "current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "site_contact_receipts_key_hash_check": {
+          "name": "site_contact_receipts_key_hash_check",
+          "value": "\"site_contact_receipts\".\"key_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "site_contact_receipts_fingerprint_check": {
+          "name": "site_contact_receipts_fingerprint_check",
+          "value": "\"site_contact_receipts\".\"fingerprint\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.site_contact_submissions": {
+      "name": "site_contact_submissions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "reply_to": {
+          "name": "reply_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message": {
+          "name": "message",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "site_contact_submissions_pending_updated_index": {
+          "name": "site_contact_submissions_pending_updated_index",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"site_contact_submissions\".\"status\" = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "site_contact_submissions_system_access": {
+          "name": "site_contact_submissions_system_access",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('app.system_access', true) = 'on'",
+          "withCheck": "current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "site_contact_submissions_subject_check": {
+          "name": "site_contact_submissions_subject_check",
+          "value": "\"site_contact_submissions\".\"subject\" in ('login', 'mfa', 'org', 'data', 'other')"
+        },
+        "site_contact_submissions_status_check": {
+          "name": "site_contact_submissions_status_check",
+          "value": "\"site_contact_submissions\".\"status\" in ('pending', 'sent', 'failed')"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.site_newsletter_subscriptions": {
+      "name": "site_newsletter_subscriptions",
+      "schema": "",
+      "columns": {
+        "mailbox": {
+          "name": "mailbox",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'subscribed'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "site_newsletter_subscriptions_system_access": {
+          "name": "site_newsletter_subscriptions_system_access",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('app.system_access', true) = 'on'",
+          "withCheck": "current_setting('app.system_access', true) = 'on'"
+        }
+      },
+      "checkConstraints": {
+        "site_newsletter_subscriptions_mailbox_check": {
+          "name": "site_newsletter_subscriptions_mailbox_check",
+          "value": "length(\"site_newsletter_subscriptions\".\"mailbox\") between 3 and 254"
+        },
+        "site_newsletter_subscriptions_status_check": {
+          "name": "site_newsletter_subscriptions_status_check",
+          "value": "\"site_newsletter_subscriptions\".\"status\" in ('subscribed', 'unsubscribed', 'suppressed')"
+        }
+      },
+      "isRLSEnabled": true
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

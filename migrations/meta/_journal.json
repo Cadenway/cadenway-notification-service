@@ -64,6 +64,20 @@
       "when": 1795203914267,
       "tag": "0008_activity_email",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795270284689,
+      "tag": "0009_public_site_submissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795271620817,
+      "tag": "0010_site_contact_recovery_lookup",
+      "breakpoints": true
     }
   ]
 }

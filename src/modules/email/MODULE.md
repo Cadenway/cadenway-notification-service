@@ -26,15 +26,19 @@ with later phases.
 
 ## Public entry points
 
-| Entry point                                   | Consumers                      |
-| --------------------------------------------- | ------------------------------ |
-| `email.module`                                | activity-digests, quota-alerts |
-| `public/activity-notice/send-activity-notice` | activity-digests               |
-| `public/quota-alert/send-quota-alert-email`   | quota-alerts                   |
+| Entry point                                   | Consumers                                  |
+| --------------------------------------------- | ------------------------------------------ |
+| `email.module`                                | activity-digests, quota-alerts, site-forms |
+| `public/activity-notice/send-activity-notice` | activity-digests                           |
+| `public/quota-alert/send-quota-alert-email`   | quota-alerts                               |
+| `public/site-contact/send-site-contact-email` | site-forms                                 |
 
 `EmailModule` exports `SendActivityNotice` for the activity delivery job. Activity Digests
 owns preferences and current authorization checks, and records the send outcome.
 Quota Alerts owns the recipient checks and jobs for `SendQuotaAlertEmail`; Email renders and submits the message.
+Site Forms owns support submission storage and jobs. Email submits the plain-text message through
+the shared SMTP transport with a server-controlled subject, From and recipient. The visitor address
+is used only as Reply-To. The UUID of the submission supplies the stable Message-ID.
 
 ## Owned tables
 

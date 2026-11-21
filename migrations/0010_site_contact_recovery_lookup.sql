@@ -1,0 +1,1 @@
+CREATE INDEX "site_contact_submissions_pending_updated_index" ON "site_contact_submissions" USING btree ("updated_at","id") WHERE "site_contact_submissions"."status" = 'pending';

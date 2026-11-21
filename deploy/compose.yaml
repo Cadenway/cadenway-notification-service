@@ -42,6 +42,7 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       MAIL_FROM: ${MAIL_FROM}
+      SITE_CONTACT_SUPPORT_ADDRESS: ${SITE_CONTACT_SUPPORT_ADDRESS:-}
       WEB_APP_URL: ${PUBLIC_SCHEME:-https}://app.${DOMAIN}
     networks:
       - internal

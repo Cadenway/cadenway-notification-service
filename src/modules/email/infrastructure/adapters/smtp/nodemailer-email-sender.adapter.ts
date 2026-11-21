@@ -3,6 +3,16 @@ import { createTransport } from 'nodemailer';
 import type { SMTPSentMessageInfo, Transporter } from 'nodemailer';
 import type { EmailSender } from '../../../application/ports/outbound/smtp/code-email/email-sender.port.js';
 import type { OutgoingEmail } from '../../../application/models/code-email/outgoing-email.model.js';
+import type { SiteContactEmailSender } from '../../../application/ports/outbound/smtp/site-contact/site-contact-email-sender.port.js';
+import type { SendSiteContactEmailInput } from '../../../application/use-cases/commands/site-contact/send-site-contact-email/send-site-contact-email.input.js';
+
+const siteContactSubjects = {
+  login: 'Support · Connexion',
+  mfa: 'Support · Double authentification',
+  org: 'Support · Organisation',
+  data: 'Support · Données personnelles',
+  other: 'Support · Autre demande',
+} as const satisfies Record<SendSiteContactEmailInput['subject'], string>;
 
 /**
  * Interface SmtpSettings
@@ -192,7 +202,9 @@ export class EmailNotSentError extends Error {
  * - nodemailer logs nothing, and an error leaves with its codes only (`EmailNotSentError`): neither
  *   the address nor the content reaches a log or a stored job.
  */
-export class NodemailerEmailSender implements EmailSender, OnApplicationShutdown {
+export class NodemailerEmailSender
+  implements EmailSender, SiteContactEmailSender, OnApplicationShutdown
+{
   // #region Properties
   /**
    * Property transporter
@@ -300,6 +312,24 @@ export class NodemailerEmailSender implements EmailSender, OnApplicationShutdown
           : {},
         // The content is built by the templates only: nothing may make nodemailer read a file or
         // fetch a URL.
+        disableFileAccess: true,
+        disableUrlAccess: true,
+      });
+    } catch (error) {
+      throw new EmailNotSentError(error);
+    }
+  }
+
+  /** Delivers one plain-text contact message with a server-controlled envelope and subject. */
+  public async sendSiteContact(input: SendSiteContactEmailInput): Promise<void> {
+    try {
+      await this.transporter.sendMail({
+        from: { name: SENDER_NAME, address: this.from },
+        to: { name: '', address: input.supportAddress },
+        replyTo: { name: '', address: input.replyTo },
+        subject: siteContactSubjects[input.subject],
+        text: input.message,
+        messageId: `<${input.submissionId}@${this.messageIdDomain}>`,
         disableFileAccess: true,
         disableUrlAccess: true,
       });
