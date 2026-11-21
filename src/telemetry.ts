@@ -9,5 +9,6 @@ import { startTelemetry } from '@cadenway/nest-common/telemetry';
 // process.
 startTelemetry({
   service: 'notification-service',
-  sensitiveHttpPathPrefixes: ['/internal/v1/inbox/', '/internal/v1/tasks/'],
+  // Covers Site, Inbox and outbound Task paths. The kit preserves templated route attributes.
+  sensitiveHttpPathPrefixes: ['/internal/v1/'],
 });

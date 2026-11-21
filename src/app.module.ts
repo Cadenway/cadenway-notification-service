@@ -16,6 +16,7 @@ import type { AppConfig } from './config/app-config.js';
 import { jobQueues } from './config/job-queues.js';
 import { ActivityDigestsModule } from './modules/activity-digests/activity-digests.module.js';
 import { EmailModule } from './modules/email/email.module.js';
+import { SiteFormsModule } from './modules/site-forms/site-forms.module.js';
 import { InboxModule } from './modules/inbox/inbox.module.js';
 import { NotificationPreferencesModule } from './modules/notification-preferences/notification-preferences.module.js';
 import { PlatformModule } from './modules/platform/platform.module.js';
@@ -116,6 +117,7 @@ import { QuotaAlertsModule } from './modules/quota-alerts/quota-alerts.module.js
     }),
     PlatformModule,
     EmailModule,
+    SiteFormsModule,
     NotificationPreferencesModule,
     ActivityDigestsModule,
     InboxModule,
@@ -130,6 +132,13 @@ export class AppModule {
     app: Pick<NestExpressApplication, 'use'>,
   ): void {
     InboxModule.registerAutomationNotificationPrivacy(app);
+  }
+
+  /** Applies the cache policy for Site routes before the application starts listening. */
+  public static registerSitePrivacy(
+    app: Parameters<typeof SiteFormsModule.registerRequestPrivacy>[0],
+  ): void {
+    SiteFormsModule.registerRequestPrivacy(app);
   }
   // #endregion
 }

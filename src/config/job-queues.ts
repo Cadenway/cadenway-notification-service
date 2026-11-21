@@ -1,5 +1,17 @@
 import type { JobQueueDeclaration } from '@cadenway/nest-jobs';
 
+/** Delivers one previously accepted Contact submission by its UUID. */
+export const SEND_SITE_CONTACT_EMAIL_QUEUE = 'email.send-site-contact';
+
+/** Attempts before the Contact delivery is marked failed and dead-lettered. */
+export const SEND_SITE_CONTACT_EMAIL_MAX_ATTEMPTS = 5;
+
+/** System sweep for expired Contact receipts and pending submissions whose original jobs vanished. */
+export const RECOVER_SITE_CONTACT_QUEUE = 'site.recover-contact';
+
+/** Checks a bounded batch of eligible Contact submissions at most every 15 minutes. */
+export const RECOVER_SITE_CONTACT_CRON = '*/15 * * * *';
+
 /**
  * Constant SEND_CODE_EMAIL_QUEUE
  *
@@ -205,6 +217,27 @@ export const QUOTA_ALERT_QUEUE: string = 'quota.alert';
  * @type {readonly JobQueueDeclaration[]}
  */
 export const jobQueues: readonly JobQueueDeclaration[] = [
+  {
+    name: SEND_SITE_CONTACT_EMAIL_QUEUE,
+    retryLimit: SEND_SITE_CONTACT_EMAIL_MAX_ATTEMPTS - 1,
+    retryDelaySeconds: 10,
+    retryBackoff: true,
+    retryDelayMaxSeconds: 120,
+    expireInSeconds: 120,
+    retentionSeconds: 86_400,
+    deleteAfterSeconds: 3_600,
+    deadLetterRetentionSeconds: 86_400,
+  },
+  {
+    name: RECOVER_SITE_CONTACT_QUEUE,
+    retryLimit: 2,
+    retryDelaySeconds: 30,
+    retryBackoff: false,
+    expireInSeconds: 60,
+    retentionSeconds: 900,
+    deleteAfterSeconds: 3_600,
+    deadLetterRetentionSeconds: 86_400,
+  },
   {
     name: SEND_CODE_EMAIL_QUEUE,
     retryLimit: SEND_CODE_EMAIL_MAX_ATTEMPTS - 1,

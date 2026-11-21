@@ -36,6 +36,9 @@ import { sendActivityNoticeProvider } from './composition/providers/use-cases/ac
 import { SendActivityNotice } from './application/use-cases/commands/activity-notice/send-activity-notice/send-activity-notice.use-case.js';
 import { SendQuotaAlertEmail } from './application/use-cases/commands/quota-alert/send-quota-alert-email/send-quota-alert-email.use-case.js';
 import { sendQuotaAlertEmailProvider } from './composition/providers/use-cases/quota-alert/send-quota-alert-email.provider.js';
+import { EMAIL_SENDER } from './composition/tokens/code-email/email-sender.token.js';
+import type { SiteContactEmailSender } from './application/ports/outbound/smtp/site-contact/site-contact-email-sender.port.js';
+import { SendSiteContactEmail } from './application/use-cases/commands/site-contact/send-site-contact-email/send-site-contact-email.use-case.js';
 
 /**
  * Class EmailModule
@@ -98,7 +101,12 @@ import { sendQuotaAlertEmailProvider } from './composition/providers/use-cases/q
     expireSecurityEmailsHandlerProvider,
     sendActivityNoticeProvider,
     sendQuotaAlertEmailProvider,
+    {
+      provide: SendSiteContactEmail,
+      inject: [EMAIL_SENDER],
+      useFactory: (sender: SiteContactEmailSender) => new SendSiteContactEmail(sender),
+    },
   ],
-  exports: [SendActivityNotice, SendQuotaAlertEmail],
+  exports: [SendActivityNotice, SendQuotaAlertEmail, SendSiteContactEmail],
 })
 export class EmailModule {}

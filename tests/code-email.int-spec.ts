@@ -1,12 +1,18 @@
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { eventSchemas } from '@cadenway/contracts/events/identity-service';
 import type { OneTimeCodeIssuedV1 } from '@cadenway/contracts/events/identity-service';
-import { createApplication, loadConfig, runWithOrganizationContext } from '@cadenway/nest-common';
+import {
+  createApplication,
+  InternalTokenSigner,
+  loadConfig,
+  runWithOrganizationContext,
+} from '@cadenway/nest-common';
 import { SystemTransactionRunner, TenantTransactionRunner } from '@cadenway/nest-common/database';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { appConfigSchema } from '../src/config/app-config.js';
@@ -77,6 +83,7 @@ function compose(...args: readonly string[]): string {
       encoding: 'utf8',
       env: {
         ...process.env,
+        COMPOSE_DISABLE_ENV_FILE: '1',
         DEV_POSTGRES_PORT: '0',
         DEV_NATS_PORT: natsHostPort,
         DEV_SMTP_PORT: '0',
@@ -280,6 +287,7 @@ async function waitForMessages(total: number): Promise<readonly MailpitSummary[]
 describe('code e-mails', () => {
   const lines: string[] = [];
   let app: NestExpressApplication | undefined;
+  let gatewaySigner: InternalTokenSigner;
 
   /**
    * The running application.
@@ -291,6 +299,32 @@ describe('code e-mails', () => {
       throw new Error('The application did not start.');
     }
     return app;
+  }
+
+  /** Starts the application with the current fixture configuration. */
+  async function startApp(): Promise<NestExpressApplication> {
+    const config = loadConfig(appConfigSchema);
+    const started = await createApplication(AppModule, {
+      service: 'notification-service',
+      config,
+      provideConfig: true,
+      internalToken: {
+        verifier: {
+          audience: config.INTERNAL_TOKEN_AUDIENCE,
+          trustedIssuers: config.INTERNAL_TOKEN_TRUSTED_ISSUERS,
+        },
+      },
+      logDestination: {
+        write: (line: string): boolean => {
+          lines.push(line);
+          return true;
+        },
+      },
+    });
+    AppModule.registerAutomationNotificationPrivacy(started);
+    AppModule.registerSitePrivacy(started);
+    await started.init();
+    return started;
   }
 
   /**
@@ -384,35 +418,21 @@ describe('code e-mails', () => {
     vi.stubEnv('INTERNAL_TOKEN_AUDIENCE', 'notification-service');
     vi.stubEnv('INTERNAL_TOKEN_PRIVATE_JWK', '');
     vi.stubEnv('IDENTITY_SERVICE_URL', '');
-    vi.stubEnv(
-      'INTERNAL_TOKEN_TRUSTED_ISSUERS',
-      '{"api-gateway":[{"kty":"OKP","crv":"Ed25519","x":"MVZQc5h6AXxnMpaBTaYw5kI-yWWawl6zp8Srhuf5NK0","kid":"local-placeholder"}]}',
-    );
+    const { x, d } = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' });
+    if (x === undefined || d === undefined) throw new Error('The fixture keypair is incomplete.');
+    const publicJwk = { kty: 'OKP', crv: 'Ed25519', kid: 'test-site-gateway', x } as const;
+    vi.stubEnv('INTERNAL_TOKEN_TRUSTED_ISSUERS', JSON.stringify({ 'api-gateway': [publicJwk] }));
+    gatewaySigner = await InternalTokenSigner.create({
+      issuer: 'api-gateway',
+      privateJwk: { ...publicJwk, d },
+    });
     vi.stubEnv('SMTP_HOST', '127.0.0.1');
     vi.stubEnv('SMTP_PORT', hostPort('mailpit', '1025'));
     vi.stubEnv('MAIL_FROM', 'no-reply@cadenway.localhost');
+    vi.stubEnv('SITE_CONTACT_SUPPORT_ADDRESS', 'support@example.test');
     vi.stubEnv('WEB_APP_URL', 'http://app.cadenway.localhost');
 
-    const config = loadConfig(appConfigSchema);
-    app = await createApplication(AppModule, {
-      service: 'notification-service',
-      config,
-      provideConfig: true,
-      internalToken: {
-        verifier: {
-          audience: config.INTERNAL_TOKEN_AUDIENCE,
-          trustedIssuers: config.INTERNAL_TOKEN_TRUSTED_ISSUERS,
-        },
-      },
-      // Every line the service writes, at debug level, for the check that no code leaks.
-      logDestination: {
-        write: (line: string): boolean => {
-          lines.push(line);
-          return true;
-        },
-      },
-    });
-    await app.init();
+    app = await startApp();
   });
 
   afterAll(async () => {
@@ -712,5 +732,160 @@ describe('code e-mails', () => {
       expect(written).not.toContain(`${code.slice(0, 3)} ${code.slice(3)}`);
     }
     expect(written).not.toContain(camilleMartin.email);
+  });
+
+  it('delivers one valid signed Contact submission to Mailpit across equivalent retries', async () => {
+    const token = await gatewaySigner.sign('notification-service', {
+      actor: { type: 'system', id: 'api-gateway' },
+      organizationId: null,
+    });
+    const key = randomUUID();
+    const email = 'visitor@example.test';
+    const message = 'Je ne parviens plus à me connecter à mon compte.';
+    const malformedValue = 'parser-body-value-must-stay-private';
+    const contact = () =>
+      request(service().getHttpServer())
+        .post('/internal/v1/contact-submissions')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Content-Type', 'application/json')
+        .set('Idempotency-Key', key);
+
+    const malformed = await contact().send(`{"message":"${malformedValue}`).expect(400);
+    expect(malformed.headers['cache-control']).toBe('private, no-store');
+    expect(malformed.text).not.toContain(malformedValue);
+    const unsupported = await contact()
+      .set('Content-Type', 'application/json; charset=iso-8859-1')
+      .send('{"message":"test"}')
+      .expect(400);
+    expect(unsupported.headers['cache-control']).toBe('private, no-store');
+    expect(unsupported.body).toMatchObject({
+      code: 'request.invalid',
+      details: { issues: [{ in: 'body', path: '', code: 'invalid_format' }] },
+    });
+
+    const valid = { email, subject: 'login', message };
+    await contact().send(valid).expect(202).expect('Cache-Control', 'private, no-store');
+    await contact().send(valid).expect(202).expect('Cache-Control', 'private, no-store');
+    await contact()
+      .send({ ...valid, message: `${message} Merci.` })
+      .expect(422);
+
+    const sent = await vi.waitFor(
+      async () => {
+        const system = service().get(SystemTransactionRunner);
+        const stored = await system.run(({ client }) =>
+          client.query('select id, status from site_contact_submissions where reply_to = $1', [
+            email,
+          ]),
+        );
+        const rows = stored.rows as readonly { readonly id: string; readonly status: string }[];
+        expect(rows).toHaveLength(1);
+        const receipt = rows[0];
+        if (receipt === undefined) throw new Error('The contact receipt is missing.');
+        expect(receipt.status).toBe('sent');
+        const inbox = await mailpit<{ readonly messages: readonly MailpitSummary[] }>(
+          '/api/v1/messages',
+        );
+        const messages = inbox.messages.filter(
+          ({ MessageID }) => MessageID === `${receipt.id}@cadenway.localhost`,
+        );
+        expect(messages).toHaveLength(1);
+        return messages[0];
+      },
+      { timeout: 25_000, interval: 250 },
+    );
+    if (sent === undefined) throw new Error('Mailpit holds no contact message.');
+    const delivered = await mailpit<MailpitMessage>(`/api/v1/message/${sent.ID}`);
+    const headers = await mailpit<Readonly<Record<string, readonly string[]>>>(
+      `/api/v1/message/${sent.ID}/headers`,
+    );
+    expect(delivered.Subject).toBe('Support · Connexion');
+    expect(delivered.From.Address).toBe('no-reply@cadenway.localhost');
+    expect(delivered.To).toEqual([{ Name: '', Address: 'support@example.test' }]);
+    expect(headers['Reply-To']).toEqual([email]);
+    expect(delivered.Text.trim()).toBe(message);
+    expect(delivered.HTML).toBe('');
+    for (const privateValue of [email, message, key, malformedValue]) {
+      expect(lines.join('')).not.toContain(privateValue);
+    }
+  });
+
+  it('honours accepted Contact receipts after support delivery is disabled', async () => {
+    const token = await gatewaySigner.sign('notification-service', {
+      actor: { type: 'system', id: 'api-gateway' },
+      organizationId: null,
+    });
+    const key = randomUUID();
+    const email = 'camille.receipt@ateliernord.test';
+    const rejectedEmail = 'camille.rejected@ateliernord.test';
+    const valid = {
+      email,
+      subject: 'login',
+      message: 'Je ne parviens plus à me connecter à mon compte.',
+    };
+    const contact = (idempotencyKey: string) =>
+      request(service().getHttpServer())
+        .post('/internal/v1/contact-submissions')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', idempotencyKey);
+
+    await contact(key).send(valid).expect(202);
+    const id = await vi.waitFor(
+      async () => {
+        const result = await service()
+          .get(SystemTransactionRunner)
+          .run(({ client }) =>
+            client.query('select id, status from site_contact_submissions where reply_to = $1', [
+              email,
+            ]),
+          );
+        const rows = result.rows as readonly { readonly id: string; readonly status: string }[];
+        expect(rows).toHaveLength(1);
+        expect(rows[0]?.status).toBe('sent');
+        const submission = rows[0];
+        if (submission === undefined) throw new Error('The contact submission is missing.');
+        return submission.id;
+      },
+      { timeout: 25_000, interval: 250 },
+    );
+
+    await service().close();
+    app = undefined;
+    vi.stubEnv('SITE_CONTACT_SUPPORT_ADDRESS', undefined);
+    app = await startApp();
+
+    const replay = await contact(key).send(valid).expect(202);
+    expect(replay.text).toBe('');
+    expect(replay.headers['cache-control']).toBe('private, no-store');
+    const changed = await contact(key)
+      .send({ ...valid, message: `${valid.message} Merci.` })
+      .expect(422);
+    expect(changed.body).toMatchObject({ code: 'idempotency.key-reused' });
+    const rejectedKey = randomUUID();
+    const unavailable = await contact(rejectedKey)
+      .send({ ...valid, email: rejectedEmail })
+      .expect(503);
+    expect(unavailable.body).toMatchObject({ code: 'upstream.unavailable' });
+
+    const state = await service()
+      .get(SystemTransactionRunner)
+      .run(async ({ client }) => {
+        const submissions = await client.query(
+          'select id, reply_to from site_contact_submissions where reply_to = any($1::text[])',
+          [[email, rejectedEmail]],
+        );
+        const receipts = await client.query(
+          'select submission_id from site_contact_receipts where key_hash = any($1::text[])',
+          [[key, rejectedKey].map((value) => createHash('sha256').update(value).digest('hex'))],
+        );
+        const jobs = await client.query(
+          "select count(*)::int as total from pgboss.job where name = 'email.send-site-contact' and data->'payload'->>'submissionId' = $1",
+          [id],
+        );
+        return { submissions: submissions.rows, receipts: receipts.rows, jobs: jobs.rows };
+      });
+    expect(state.submissions).toEqual([{ id, reply_to: email }]);
+    expect(state.receipts).toEqual([{ submission_id: id }]);
+    expect(state.jobs).toEqual([{ total: 1 }]);
   });
 });
