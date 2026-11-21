@@ -1,22 +1,30 @@
 import { execFileSync } from 'node:child_process';
 import { generateKeyPairSync, randomUUID } from 'node:crypto';
+import { createServer as createHttpServer } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
-import { reminderDueV1Schema } from '@cadenway/contracts/events/notification-service';
+import {
+  notificationCreatedV1Schema,
+  reminderDueV1Schema,
+} from '@cadenway/contracts/events/notification-service';
 import {
   taskAssignedV1Schema,
   taskNotificationDeliveryAuthorizedV1Schema,
 } from '@cadenway/contracts/events/task-service';
 import {
+  CreateAutomationNotificationInternalResponse,
   GetTaskReminderInternalResponse,
   ListInboxNotificationsInternalResponse,
   SetTaskReminderInternalResponse,
   UpdateNotificationPreferencesInternalResponse,
 } from '@cadenway/contracts/validators/internal/notification-service';
+import { AuthorizeAutomationNotificationInternalBody } from '@cadenway/contracts/validators/internal/task-service';
 import {
   createApplication,
   InternalTokenSigner,
+  InternalTokenVerifier,
   loadConfig,
   runWithOrganizationContext,
 } from '@cadenway/nest-common';
@@ -284,6 +292,101 @@ function keyPair(): {
   return { publicJwk, privateJwk: { ...publicJwk, d } };
 }
 
+const automationPath = '/internal/v1/inbox/automation-notifications';
+const firstRuleId = '019af000-0000-7000-8000-000000000001';
+const secondRuleId = '019af000-0000-7000-8000-000000000002';
+const automationCommand = {
+  taskKey: 'CAD-482',
+  ruleAuthorUserId: camilleMartinId,
+  recipientUserId: '019af000-0000-7000-8000-000000000003',
+};
+
+/** Verifies the real outbound HTTP request and answers with a private Task decision. */
+async function startTaskAuthority(publicJwk: Ed25519PublicJwk) {
+  type Authority = 'allow' | 'deny' | 'unavailable';
+  const decisions = new Map<string, Authority>();
+  const authorized: {
+    readonly organizationId: string;
+    readonly taskKey: string;
+    readonly body: Pick<typeof automationCommand, 'ruleAuthorUserId' | 'recipientUserId'>;
+  }[] = [];
+  const errors: unknown[] = [];
+  const verifier = await InternalTokenVerifier.create({
+    audience: 'task-service',
+    trustedIssuers: { 'notification-service': [publicJwk] },
+  });
+
+  async function answer(incoming: IncomingMessage, response: ServerResponse): Promise<void> {
+    const path =
+      /^\/internal\/v1\/tasks\/([A-Z]{2,5}-[1-9]\d*)\/automation-notification-authorization$/u;
+    const taskKey = path.exec(incoming.url ?? '')?.[1];
+    if (
+      incoming.method !== 'POST' ||
+      taskKey === undefined ||
+      incoming.headers['content-type'] !== 'application/json' ||
+      !incoming.headers.authorization?.startsWith('Bearer ')
+    ) {
+      throw new Error('Unexpected Task authorization request.');
+    }
+    const principal = await verifier.verify(incoming.headers.authorization.slice(7));
+    if (
+      principal.actor.type !== 'system' ||
+      principal.actor.id !== 'notification-service' ||
+      principal.organizationId === null
+    ) {
+      throw new Error('The Task call must use the Notification system actor and a tenant.');
+    }
+    incoming.setEncoding('utf8');
+    const chunks: string[] = [];
+    for await (const chunk of incoming as AsyncIterable<string>) chunks.push(chunk);
+    const body = AuthorizeAutomationNotificationInternalBody.parse(JSON.parse(chunks.join('')));
+    authorized.push({ organizationId: principal.organizationId, taskKey, body });
+    const decision = decisions.get(principal.organizationId) ?? 'allow';
+    response.setHeader('Cache-Control', 'private, no-store');
+    if (decision === 'allow') {
+      response.writeHead(204).end();
+      return;
+    }
+    const denial = decision === 'deny';
+    response.writeHead(denial ? 404 : 503, { 'Content-Type': 'application/problem+json' }).end(
+      JSON.stringify({
+        type: 'about:blank',
+        title: denial ? 'Not Found' : 'Service Unavailable',
+        status: denial ? 404 : 503,
+        code: denial ? 'task.not-found' : 'task.notification-authorization-unavailable',
+        detail: `fixture Task diagnostics for ${taskKey}`,
+      }),
+    );
+  }
+  const server = createHttpServer((incoming, response) => {
+    void answer(incoming, response).catch((error: unknown) => {
+      errors.push(error);
+      response.writeHead(500).end();
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (address === null || typeof address === 'string') {
+    throw new Error('The Task authorization server has no TCP address.');
+  }
+  return {
+    url: `http://127.0.0.1:${String(address.port)}`,
+    decisions,
+    authorized,
+    errors,
+    close: (): Promise<void> =>
+      new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error === undefined) resolve();
+          else reject(error);
+        });
+      }),
+  };
+}
+
 /**
  * The organization context of a member of an organization, as the internal token gives it.
  *
@@ -377,9 +480,14 @@ class WiringProbeController {
 
 describe('notification-service wiring', () => {
   const gateway = keyPair();
+  const automation = keyPair();
+  const notification = keyPair();
   let app: NestExpressApplication | undefined;
   let signer: InternalTokenSigner;
+  let automationSigner: InternalTokenSigner;
   let migrator: pg.Pool;
+  let taskAuthority: Awaited<ReturnType<typeof startTaskAuthority>>;
+  let stopTaskAuthority: (() => Promise<void>) | undefined;
 
   /**
    * The running application.
@@ -432,11 +540,17 @@ describe('notification-service wiring', () => {
     vi.stubEnv('NATS_USER', 'notification');
     vi.stubEnv('NATS_PASSWORD', 'notification');
     vi.stubEnv('INTERNAL_TOKEN_AUDIENCE', 'notification-service');
-    vi.stubEnv('INTERNAL_TOKEN_PRIVATE_JWK', '');
+    taskAuthority = await startTaskAuthority(notification.publicJwk);
+    stopTaskAuthority = taskAuthority.close;
+    vi.stubEnv('INTERNAL_TOKEN_PRIVATE_JWK', JSON.stringify(notification.privateJwk));
     vi.stubEnv('IDENTITY_SERVICE_URL', '');
+    vi.stubEnv('TASK_SERVICE_URL', taskAuthority.url);
     vi.stubEnv(
       'INTERNAL_TOKEN_TRUSTED_ISSUERS',
-      JSON.stringify({ 'api-gateway': [gateway.publicJwk] }),
+      JSON.stringify({
+        'api-gateway': [gateway.publicJwk],
+        'automation-service': [automation.publicJwk],
+      }),
     );
     // No e-mail is sent here: the SMTP server is never reached (tests/code-email.int-spec.ts sends).
     vi.stubEnv('SMTP_HOST', '127.0.0.1');
@@ -463,22 +577,215 @@ describe('notification-service wiring', () => {
       },
       logDestination: { write: (): void => undefined },
     });
+    AppModule.registerAutomationNotificationPrivacy(app);
     await app.init();
     signer = await InternalTokenSigner.create({
       issuer: 'api-gateway',
       privateJwk: gateway.privateJwk,
+    });
+    automationSigner = await InternalTokenSigner.create({
+      issuer: 'automation-service',
+      privateJwk: automation.privateJwk,
     });
   });
 
   afterAll(async () => {
     try {
       releaseShutdown();
+      await stopTaskAuthority?.();
       await app?.close();
       await migrator.end();
     } finally {
       vi.unstubAllEnvs();
       compose('down', '--volumes', '--remove-orphans');
     }
+  });
+
+  /** Sends one rule-scoped command through the running Notification application. */
+  async function submitAutomation(
+    organizationId: string,
+    commandKey: string,
+    body = automationCommand,
+    ruleId = firstRuleId,
+  ) {
+    const token = await automationSigner.sign('notification-service', {
+      actor: { type: 'automation', id: ruleId },
+      organizationId,
+    });
+    return request(service().getHttpServer())
+      .post(automationPath)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', commandKey)
+      .send(body);
+  }
+
+  it('records each authorized rule once and checks live Task authority before every replay', async () => {
+    const organizationId = randomUUID();
+    const commandKey = randomUUID();
+    const first = await submitAutomation(organizationId, commandKey);
+    expect(first.status).toBe(200);
+    expect(first.headers['cache-control']).toBe('private, no-store');
+    expect(CreateAutomationNotificationInternalResponse.parse(first.body)).toEqual({
+      disposition: 'applied',
+    });
+    const replay = await submitAutomation(organizationId, commandKey);
+    expect(replay.status).toBe(200);
+    expect(replay.headers['idempotent-replayed']).toBe('true');
+    expect(replay.body).toEqual(first.body);
+
+    const second = await submitAutomation(
+      organizationId,
+      commandKey,
+      automationCommand,
+      secondRuleId,
+    );
+    expect(second.status).toBe(200);
+    expect(second.headers['idempotent-replayed']).toBeUndefined();
+    expect(second.body).toEqual(first.body);
+    const reused = await submitAutomation(organizationId, commandKey, {
+      ...automationCommand,
+      taskKey: 'CAD-483',
+    });
+    expect(reused.status).toBe(422);
+    expect(reused.body).toMatchObject({ code: 'idempotency.key-reused' });
+
+    taskAuthority.decisions.set(organizationId, 'deny');
+    const denied = await submitAutomation(organizationId, commandKey);
+    expect(denied.status).toBe(404);
+    expect(denied.body).toMatchObject({ code: 'notification.not-found' });
+    taskAuthority.decisions.set(organizationId, 'unavailable');
+    const unavailable = await submitAutomation(organizationId, commandKey);
+    expect(unavailable.status).toBe(503);
+    expect(unavailable.body).toMatchObject({ code: 'upstream.unavailable' });
+    for (const refusal of [denied, unavailable]) {
+      expect(refusal.headers['cache-control']).toBe('private, no-store');
+      expect(refusal.headers['idempotent-replayed']).toBeUndefined();
+      expect(refusal.text).not.toContain(automationCommand.taskKey);
+      expect(refusal.text).not.toContain(automationCommand.recipientUserId);
+      expect(refusal.text).not.toContain('fixture Task diagnostics');
+    }
+    const invalidRule = await submitAutomation(
+      organizationId,
+      commandKey,
+      automationCommand,
+      firstRuleId.toUpperCase(),
+    );
+    expect(invalidRule.status).toBe(403);
+    expect(invalidRule.body).toMatchObject({ code: 'auth.actor-not-allowed' });
+
+    expect(taskAuthority.errors).toEqual([]);
+    expect(
+      taskAuthority.authorized.filter((entry) => entry.organizationId === organizationId),
+    ).toEqual(
+      ['CAD-482', 'CAD-482', 'CAD-482', 'CAD-483', 'CAD-482', 'CAD-482'].map((taskKey) => ({
+        organizationId,
+        taskKey,
+        body: {
+          ruleAuthorUserId: automationCommand.ruleAuthorUserId,
+          recipientUserId: automationCommand.recipientUserId,
+        },
+      })),
+    );
+
+    const tenant = service().get(TenantTransactionRunner);
+    await runWithOrganizationContext(memberOf(organizationId), () =>
+      tenant.run(async ({ client }) => {
+        const receipts = await client.query(
+          `select response_body from idempotency_keys where organization_id = $1`,
+          [organizationId],
+        );
+        expect(receipts.rows).toEqual([
+          { response_body: { disposition: 'applied' } },
+          { response_body: { disposition: 'applied' } },
+        ]);
+        const notices = await client.query(
+          `select notice.id, notice.source_event_id, notice.actor_user_id, notice.subject_value,
+                  notice.comment_id, notice.status, outbox.payload
+             from inbox_notifications notice
+             join outbox_events outbox on outbox.organization_id = notice.organization_id
+               and outbox.event_name = 'notification.created.v1'
+               and outbox.payload->>'notificationId' = notice.id::text
+            where notice.organization_id = $1 and notice.recipient_id = $2 and notice.kind = 'automation'`,
+          [organizationId, automationCommand.recipientUserId],
+        );
+        expect(notices.rows).toHaveLength(2);
+        const rows = z
+          .array(
+            z.strictObject({
+              id: z.uuid(),
+              source_event_id: z.uuid(),
+              actor_user_id: z.null(),
+              subject_value: z.literal('CAD-482'),
+              comment_id: z.null(),
+              status: z.null(),
+              payload: notificationCreatedV1Schema,
+            }),
+          )
+          .parse(notices.rows);
+        expect(new Set(rows.map(({ source_event_id }) => source_event_id)).size).toBe(2);
+        for (const row of rows) {
+          expect(row.payload).toMatchObject({
+            organizationId,
+            notificationId: row.id,
+            recipientId: automationCommand.recipientUserId,
+            subject: { kind: 'task-key', taskKey: 'CAD-482' },
+          });
+        }
+      }),
+    );
+  });
+
+  it('replays a suppressed automation command after the recipient enables in-app notices', async () => {
+    const organizationId = randomUUID();
+    const commandKey = randomUUID();
+    const recipientUserId = '019af000-0000-7000-8000-000000000004';
+    const command = { ...automationCommand, recipientUserId };
+    const token = await signer.sign('notification-service', {
+      actor: { type: 'user', id: recipientUserId },
+      organizationId,
+    });
+    function setPreference(inApp: boolean) {
+      return request(service().getHttpServer())
+        .patch('/internal/v1/me/notification-preferences')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ channels: { statusChange: { inApp } } });
+    }
+    expect((await setPreference(false)).status).toBe(200);
+    const suppressed = await submitAutomation(organizationId, commandKey, command);
+    expect(suppressed.status).toBe(200);
+    expect(CreateAutomationNotificationInternalResponse.parse(suppressed.body)).toEqual({
+      disposition: 'no_op',
+    });
+    expect((await setPreference(true)).status).toBe(200);
+    const replay = await submitAutomation(organizationId, commandKey, command);
+    expect(replay.status).toBe(200);
+    expect(replay.headers['idempotent-replayed']).toBe('true');
+    expect(replay.body).toEqual(suppressed.body);
+    const visible = await request(service().getHttpServer())
+      .get('/internal/v1/inbox/notifications')
+      .set('Authorization', `Bearer ${token}`);
+    expect(visible.status).toBe(200);
+    expect(ListInboxNotificationsInternalResponse.parse(visible.body).items).toEqual([]);
+  });
+
+  it.each([
+    ['malformed JSON', () => '{"fixturePrivateMarker"'],
+    ['oversized JSON', () => JSON.stringify({ fixturePrivateMarker: 'a'.repeat(1_048_576) })],
+  ])('makes an automation parser refusal private for %s', async (_label, body) => {
+    const response = await request(service().getHttpServer())
+      .post(automationPath)
+      .set('Content-Type', 'application/json')
+      .send(body());
+    expect(response.status).toBe(400);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    const problem = z
+      .object({
+        code: z.literal('request.invalid'),
+        details: z.object({ issues: z.array(z.unknown()) }),
+      })
+      .parse(response.body);
+    expect(problem.details.issues.length).toBeGreaterThan(0);
+    expect(response.text).not.toContain('fixturePrivateMarker');
   });
 
   it('applies its migrations as the migrator role, which owns the tables', async () => {

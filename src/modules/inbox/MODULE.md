@@ -34,6 +34,15 @@ The gateway checks the recipient's current membership and resource visibility be
 | `POST /notifications/read-all`                 | Mark visible active records read  |
 | `POST /notifications/{notificationId}/read`    | Mark a record read                |
 | `POST /notifications/{notificationId}/archive` | Archive a record                  |
+| `POST /automation-notifications`               | Record an automation action       |
+
+The automation command requires a token from `automation-service` scoped to one organization
+and a rule actor with a canonical lowercase UUIDv7. Before any receipt lookup or write, the
+command checks the task, author and recipient through a signed call to Task. Task checks active
+placement and current author edit and recipient view access in one snapshot at the time of that
+call. Only the current HTTP request uses that decision. Replays repeat this check and return the
+recorded disposition when authorized. A denial or authorization outage hides both the task and
+any previous receipt.
 
 ## Events emitted
 
@@ -72,6 +81,9 @@ durable and email eligibility.
   Approval has no separate channel in the current preferences catalog.
 - A billing receipt records a subjectless notice without actor, metrics or plan details. The owner
   of this receipt retains the history while they have access to the organization's Inbox.
+- An automation receipt uses the recipient's current `statusChange.inApp` setting. Suppression
+  records `no_op`. An applied notice links to the task key with no account actor, copied task
+  content, email or mobile push. Its source UUID derives from the tenant, rule and command key.
 - Reading and archiving each set their own timestamp once. Archiving excludes an item from the
   unread badge and preserves its read timestamp. A repeat with a current or absent precondition
   preserves the version. Cursors belong to the caller, organization and filter.
@@ -83,6 +95,11 @@ Staging a delivery writes its authorization attempt and request outbox fact toge
 must match the pending correlation in that organization and arrive within both deadlines. The
 permit, inbox record and creation fact commit together. A denial closes the attempt. An attempt
 without a current permit cannot create an inbox record.
+
+The Task call for automation ends before the command transaction begins. The kit scopes the
+command receipt to the verified tenant and rule, binds it to the body and replays it for 24 hours.
+The receipt, current preference lookup, any insert, Inbox generation and creation fact share
+the same tenant transaction.
 
 Apply version checks to single-record writes. Read-all changes the records in its snapshot at one
 instant and computes the updated unread count in that transaction.

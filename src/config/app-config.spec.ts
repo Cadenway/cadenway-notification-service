@@ -87,6 +87,33 @@ describe('appConfigSchema', () => {
     },
   );
 
+  it('can enable Task authorization independently of Identity delivery', () => {
+    const taskOnly = loadConfig(appConfigSchema, {
+      ...complete,
+      IDENTITY_SERVICE_URL: '',
+      TASK_SERVICE_URL: 'http://task-service:3013/',
+    });
+    expect(taskOnly.TASK_SERVICE_URL).toBe('http://task-service:3013');
+    expect(taskOnly.IDENTITY_SERVICE_URL).toBeUndefined();
+    expect(() =>
+      loadConfig(appConfigSchema, {
+        ...complete,
+        IDENTITY_SERVICE_URL: '',
+        TASK_SERVICE_URL: 'http://task-service:3013',
+        INTERNAL_TOKEN_PRIVATE_JWK: '',
+      }),
+    ).toThrow(/INTERNAL_TOKEN_PRIVATE_JWK/u);
+  });
+
+  it('refuses to use a Task authorization origin with a path or embedded identity', () => {
+    expect(() =>
+      loadConfig(appConfigSchema, {
+        ...complete,
+        TASK_SERVICE_URL: 'http://test:sentinel@task-service:3013/internal',
+      }),
+    ).toThrow(/TASK_SERVICE_URL/u);
+  });
+
   it('refuses to start without the database, the broker, the audience or the trusted issuers', () => {
     expect(() => loadConfig(appConfigSchema, { PORT: '3016' })).toThrow(ConfigError);
     try {

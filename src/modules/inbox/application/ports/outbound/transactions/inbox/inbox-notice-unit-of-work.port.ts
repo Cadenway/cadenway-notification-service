@@ -1,5 +1,6 @@
 import type { InboxNotification } from '../../../../../domain/aggregates/inbox/inbox-notification.aggregate.js';
 import type { NotificationCreated } from '../../../../../domain/events/inbox/notification-created.event.js';
+import type { InboxSubject } from '../../../../models/inbox/inbox-subject.model.js';
 
 interface InboxNoticeStore {
   // #region Methods
@@ -13,12 +14,13 @@ interface InboxNoticeStore {
     sourceEventId: string,
     item: InboxNotification,
     fact: NotificationCreated,
+    details?: { readonly subject: InboxSubject },
   ): Promise<boolean>;
   // #endregion
 }
 
-/** Runs a neutral billing receipt write in the verified Inbox transaction. */
-export interface BillingNoticeUnitOfWork {
+/** Runs an authorized inbox notice write in the verified tenant transaction. */
+export interface InboxNoticeUnitOfWork {
   // #region Methods
   /** Joins the preference check, recipient record and outbox fact in one transaction. */
   run<T>(organizationId: string, work: (store: InboxNoticeStore) => Promise<T>): Promise<T>;

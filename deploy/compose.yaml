@@ -11,6 +11,7 @@
 # automation-service (its notify action only). The folded scalar gives the service one line of JSON.
 # The optional Identity origin and Notification signer activate activity email together. Provision
 # the matching trust at Identity and the new broker consumer permissions before setting the pair.
+# The optional Task origin enables automation notices after Task trusts the Notification signer.
 #
 # SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and MAIL_FROM are the outgoing e-mail, each from
 # the variable of the same name in cadenway-ops. WEB_APP_URL, the origin the links of the e-mails
@@ -36,6 +37,7 @@ services:
         "automation-service": [${AUTOMATION_SERVICE_INTERNAL_TOKEN_PUBLIC_JWKS}]}
       IDENTITY_SERVICE_URL: ${NOTIFICATION_IDENTITY_SERVICE_URL:-}
       ORGANIZATION_SERVICE_URL: ${NOTIFICATION_ORGANIZATION_SERVICE_URL:-}
+      TASK_SERVICE_URL: ${NOTIFICATION_TASK_SERVICE_URL:-}
       INTERNAL_TOKEN_PRIVATE_JWK: ${NOTIFICATION_SERVICE_INTERNAL_TOKEN_PRIVATE_JWK:-}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
