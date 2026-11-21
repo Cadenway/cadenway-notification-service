@@ -28,6 +28,7 @@ await runApplication({ service: 'notification-service' }, async (): Promise<void
       },
     },
   });
+  AppModule.registerAutomationNotificationPrivacy(app);
   AppModule.registerSitePrivacy(app);
   await app.listen(config.PORT);
 });

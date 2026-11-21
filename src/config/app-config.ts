@@ -37,6 +37,8 @@ import { z } from 'zod';
  * - `IDENTITY_SERVICE_URL` and `INTERNAL_TOKEN_PRIVATE_JWK`: configure both to bind the Identity
  *   recipient reader. Both absent keeps activity email dormant. The issuer is `notification-service`.
  * - `ORGANIZATION_SERVICE_URL`: enables quota recipient verification when Identity delivery is configured.
+ * - `TASK_SERVICE_URL`: enables live Task authority checks for automation notices when the
+ *   Notification signer is configured and Task trusts its public key.
  *
  * - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` and `WEB_APP_URL`: the
  *   outgoing e-mail, see `EmailConfig`.
@@ -52,6 +54,7 @@ export type AppConfig = BaseConfig &
   EmailConfig & {
     readonly IDENTITY_SERVICE_URL?: string;
     readonly ORGANIZATION_SERVICE_URL?: string;
+    readonly TASK_SERVICE_URL?: string;
   };
 
 /**
@@ -157,7 +160,7 @@ export interface EmailConfig {
 const LOCAL_WEB_APP_URL: string = 'http://app.cadenway.localhost';
 
 /** Accepts a service origin without credentials, a path, query or fragment. */
-function serviceOrigin(service: 'Identity' | 'Organization'): z.ZodType<string> {
+function serviceOrigin(service: 'Identity' | 'Organization' | 'Task'): z.ZodType<string> {
   return z
     .url({ protocol: /^https?$/u, error: `Expected the http:// or https:// origin of ${service}.` })
     .transform((value, context) => {
@@ -193,6 +196,7 @@ export const appConfigSchema: z.ZodType<AppConfig> = z
       internalTokenSignerConfigShape.INTERNAL_TOKEN_PRIVATE_JWK.optional(),
     IDENTITY_SERVICE_URL: serviceOrigin('Identity').optional(),
     ORGANIZATION_SERVICE_URL: serviceOrigin('Organization').optional(),
+    TASK_SERVICE_URL: serviceOrigin('Task').optional(),
     SMTP_HOST: z.string().min(1),
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535),
     SMTP_USER: z.string().min(1).optional(),
@@ -207,19 +211,14 @@ export const appConfigSchema: z.ZodType<AppConfig> = z
       .transform((url) => url.replace(/\/+$/u, '')),
   })
   .superRefine((config, context) => {
-    if (
-      (config.IDENTITY_SERVICE_URL === undefined) !==
-      (config.INTERNAL_TOKEN_PRIVATE_JWK === undefined)
-    ) {
+    const hasOutboundOrigin =
+      config.IDENTITY_SERVICE_URL !== undefined || config.TASK_SERVICE_URL !== undefined;
+    if (hasOutboundOrigin !== (config.INTERNAL_TOKEN_PRIVATE_JWK !== undefined)) {
       context.addIssue({
         code: 'custom',
-        path: [
-          config.IDENTITY_SERVICE_URL === undefined
-            ? 'IDENTITY_SERVICE_URL'
-            : 'INTERNAL_TOKEN_PRIVATE_JWK',
-        ],
+        path: [hasOutboundOrigin ? 'INTERNAL_TOKEN_PRIVATE_JWK' : 'IDENTITY_SERVICE_URL'],
         message:
-          'IDENTITY_SERVICE_URL and INTERNAL_TOKEN_PRIVATE_JWK are set together or both left unset.',
+          'INTERNAL_TOKEN_PRIVATE_JWK requires IDENTITY_SERVICE_URL or TASK_SERVICE_URL, and each origin requires the signer.',
       });
     }
     if ((config.SMTP_USER === undefined) !== (config.SMTP_PASSWORD === undefined)) {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { BillingNoticeUnitOfWork } from '../../../../ports/outbound/transactions/inbox/billing-notice-unit-of-work.port.js';
+import type { InboxNoticeUnitOfWork } from '../../../../ports/outbound/transactions/inbox/inbox-notice-unit-of-work.port.js';
 import { RecordBillingNotice } from './record-billing-notice.use-case.js';
 
 const input = {
@@ -16,7 +16,7 @@ function setup() {
     newId: vi.fn().mockResolvedValue('notice'),
     insert: vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false),
   };
-  const work: BillingNoticeUnitOfWork = { run: (_organization, run) => run(store) };
+  const work: InboxNoticeUnitOfWork = { run: (_organization, run) => run(store) };
   const preference = vi.fn().mockResolvedValue(true);
   const command = new RecordBillingNotice(work, preference, () => now);
   return { store, preference, command };

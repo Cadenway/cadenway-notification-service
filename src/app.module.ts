@@ -10,6 +10,7 @@ import {
 } from '@cadenway/nest-messaging';
 import { OutboxModule } from '@cadenway/nest-messaging/outbox';
 import { Module } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 
 import type { AppConfig } from './config/app-config.js';
 import { jobQueues } from './config/job-queues.js';
@@ -126,6 +127,13 @@ import { QuotaAlertsModule } from './modules/quota-alerts/quota-alerts.module.js
 })
 export class AppModule {
   // #region Methods
+  /** Applies the automation command's cache and parser policy before Nest routes requests. */
+  public static registerAutomationNotificationPrivacy(
+    app: Pick<NestExpressApplication, 'use'>,
+  ): void {
+    InboxModule.registerAutomationNotificationPrivacy(app);
+  }
+
   /** Applies the cache policy for Site routes before the application starts listening. */
   public static registerSitePrivacy(
     app: Parameters<typeof SiteFormsModule.registerRequestPrivacy>[0],

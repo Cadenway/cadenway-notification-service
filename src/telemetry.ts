@@ -9,6 +9,6 @@ import { startTelemetry } from '@cadenway/nest-common/telemetry';
 // process.
 startTelemetry({
   service: 'notification-service',
-  // Site collection paths are exact resources. The kit preserves templated route attributes.
+  // Covers Site, Inbox and outbound Task paths. The kit preserves templated route attributes.
   sensitiveHttpPathPrefixes: ['/internal/v1/'],
 });

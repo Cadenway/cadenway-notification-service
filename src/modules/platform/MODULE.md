@@ -34,7 +34,8 @@ application role `notification_app` reads and writes their rows and holds no DDL
 ## API
 
 None. The `Idempotency-Key` interceptor of `DatabaseModule` (`idempotency: true`) stores the key and
-the response of a route marked `@Idempotent()` in `idempotency_keys`; no route exists yet.
+the response of the automation notification route in `idempotency_keys` with the rule actor in
+the receipt's scope.
 
 ## Events emitted
 

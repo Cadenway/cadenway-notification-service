@@ -321,6 +321,7 @@ describe('code e-mails', () => {
         },
       },
     });
+    AppModule.registerAutomationNotificationPrivacy(started);
     AppModule.registerSitePrivacy(started);
     await started.init();
     return started;

@@ -1,7 +1,9 @@
-import { CONFIG } from '@cadenway/nest-common';
-import { TenantTransactionRunner } from '@cadenway/nest-common/database';
+import { CONFIG, ProblemException, toProblem } from '@cadenway/nest-common';
+import { Idempotent, TenantTransactionRunner } from '@cadenway/nest-common/database';
 import { JobsService } from '@cadenway/nest-jobs';
 import { Module } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { NextFunction, Request, Response } from 'express';
 import type { AppConfig } from '../../config/app-config.js';
 import { RETRY_INBOX_DELIVERY_AUTHORIZATION_QUEUE } from '../../config/job-queues.js';
 import { ActivityDigestsModule } from '../activity-digests/activity-digests.module.js';
@@ -20,23 +22,40 @@ import { StageTaskNotificationFact } from './application/use-cases/commands/inbo
 import { GetInboxCandidate } from './application/use-cases/queries/inbox/get-inbox-candidate/get-inbox-candidate.use-case.js';
 import { ListInboxCandidates } from './application/use-cases/queries/inbox/list-inbox-candidates/list-inbox-candidates.use-case.js';
 import { ListUnreadSubjects } from './application/use-cases/queries/inbox/list-unread-subjects/list-unread-subjects.use-case.js';
+import { authorizeAutomationNotificationProvider } from './composition/providers/use-cases/inbox/authorize-automation-notification.provider.js';
+import { recordAutomationNotificationProvider } from './composition/providers/use-cases/inbox/record-automation-notification.provider.js';
 import { recordBillingNoticeProvider } from './composition/providers/use-cases/inbox/record-billing-notice.provider.js';
 import { InboxDeliveryOutbox } from './infrastructure/messaging/outbox/inbox/inbox-delivery-outbox.adapter.js';
 import { DrizzleInboxDeliveryUnitOfWork } from './infrastructure/persistence/drizzle/transactions/inbox/drizzle-inbox-delivery.unit-of-work.js';
 import { DrizzleInboxRecordsUnitOfWork } from './infrastructure/persistence/drizzle/transactions/inbox/drizzle-inbox-records.unit-of-work.js';
 import { InboxController } from './presentation/http/controllers/inbox/inbox.controller.js';
+import { AutomationNotificationController } from './presentation/http/controllers/inbox/automation-notification.controller.js';
+import { AutomationNotificationAccessGuard } from './presentation/http/guards/inbox/automation-notification-access.guard.js';
 import { RetryInboxDeliveryAuthorizationHandler } from './presentation/jobs/handlers/inbox/retry-inbox-delivery-authorization.handler.js';
 import { TaskInboxEventsHandler } from './presentation/messaging/handlers/task/task-inbox-events.handler.js';
 
 /** The verified tenant reader shared by the three Inbox queries. */
 const INBOX_CANDIDATES_READER: symbol = Symbol('INBOX_CANDIDATES_READER');
+const automationNotificationPath = /^\/internal\/v1\/inbox\/automation-notifications\/?$/iu;
+
+/** Attaches the kit's transaction-bound receipt to the authorized command. */
+function markAutomationNotificationIdempotent(): void {
+  const prototype = AutomationNotificationController.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, 'create');
+  if (descriptor === undefined) throw new Error('Missing automation notification command handler.');
+  Idempotent({ required: true, scope: 'actor' })(prototype, 'create', descriptor);
+}
+markAutomationNotificationIdempotent();
 
 /** Composition boundary for the recipient inbox in the selected organization. */
 @Module({
   imports: [ActivityDigestsModule],
-  controllers: [InboxController],
+  controllers: [InboxController, AutomationNotificationController],
   providers: [
     InboxDeliveryOutbox,
+    AutomationNotificationAccessGuard,
+    authorizeAutomationNotificationProvider,
+    recordAutomationNotificationProvider,
     recordBillingNoticeProvider,
     {
       provide: DrizzleInboxRecordsUnitOfWork,
@@ -179,4 +198,37 @@ const INBOX_CANDIDATES_READER: symbol = Symbol('INBOX_CANDIDATES_READER');
   ],
   exports: [RecordBillingNotice],
 })
-export class InboxModule {}
+export class InboxModule {
+  // #region Methods
+  /** Marks the command private even when authentication or JSON parsing stops it early. */
+  public static registerAutomationNotificationPrivacy(
+    app: Pick<NestExpressApplication, 'use'>,
+  ): void {
+    app.use(
+      automationNotificationPath,
+      (_request: Request, response: Response, next: NextFunction) => {
+        response.setHeader('Cache-Control', 'private, no-store');
+        next();
+      },
+    );
+    app.use(
+      automationNotificationPath,
+      (error: unknown, _request: Request, response: Response, next: NextFunction) => {
+        response.setHeader('Cache-Control', 'private, no-store');
+        const problem = toProblem(error);
+        if (problem.status !== 400 || problem.code === 'request.invalid') {
+          next(error);
+          return;
+        }
+        next(
+          new ProblemException({
+            status: 400,
+            code: 'request.invalid',
+            details: { issues: [{ in: 'body', path: '', code: 'invalid_format' }] },
+          }),
+        );
+      },
+    );
+  }
+  // #endregion
+}
