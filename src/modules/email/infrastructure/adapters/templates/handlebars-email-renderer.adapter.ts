@@ -7,6 +7,7 @@ import type { InvitationEmailRenderer } from '../../../application/ports/outboun
 import type { SecurityEmailMessage } from '../../../application/models/security-email/security-email-message.model.js';
 import type { SecurityEmailRenderer } from '../../../application/ports/outbound/templates/security-email/security-email-renderer.port.js';
 import type { ActivityNoticeRenderer } from '../../../application/ports/outbound/templates/activity-notice/activity-notice-renderer.port.js';
+import type { QuotaAlertRenderer } from '../../../application/ports/outbound/templates/quota-alert/quota-alert-renderer.port.js';
 import type { CodeEmailTemplate } from '../../../domain/value-objects/code-email/code-email-template.value-object.js';
 import type { SecurityEmailTemplate } from '../../../domain/value-objects/security-email/security-email-template.value-object.js';
 import { invitationEmailContext } from './invitation-email-wording.js';
@@ -189,7 +190,12 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
  * French as the default for other account languages.
  */
 export class HandlebarsEmailRenderer
-  implements EmailRenderer, InvitationEmailRenderer, SecurityEmailRenderer, ActivityNoticeRenderer
+  implements
+    EmailRenderer,
+    InvitationEmailRenderer,
+    SecurityEmailRenderer,
+    ActivityNoticeRenderer,
+    QuotaAlertRenderer
 {
   // #region Properties
   /**
@@ -355,6 +361,29 @@ export class HandlebarsEmailRenderer
       language: locale,
       appUrl: `${this.webAppUrl}/home`,
       preferencesUrl: `${this.webAppUrl}/account/notifications`,
+    });
+  }
+
+  /** Reuses the notice layout for the quota reading and settings link. */
+  public renderQuotaAlert(
+    metric: 'seats' | 'storage',
+    thresholdPercent: number,
+    used: number,
+    limit: number,
+  ): RenderedEmail {
+    const format = new Intl.NumberFormat('fr-FR');
+    const storage = metric === 'storage';
+    const title = storage ? 'Stockage presque plein' : 'Limite de sièges proche';
+    const subject = storage ? 'Le stockage' : 'Le nombre de sièges utilisés';
+    const unit = storage ? 'octets' : 'sièges';
+    return this.render('activity-notice', {
+      title,
+      language: 'fr',
+      preview: `${subject} a atteint le seuil de ${format.format(thresholdPercent)} % pour votre organisation (${format.format(used)} sur ${format.format(limit)} ${unit}).`,
+      openLabel: 'Gérer les quotas',
+      appUrl: `${this.webAppUrl}/org/quotas`,
+      preferencesUrl: `${this.webAppUrl}/account/notifications`,
+      preferencesLabel: 'Gérer mes notifications',
     });
   }
 

@@ -19,6 +19,7 @@ import { InboxModule } from './modules/inbox/inbox.module.js';
 import { NotificationPreferencesModule } from './modules/notification-preferences/notification-preferences.module.js';
 import { PlatformModule } from './modules/platform/platform.module.js';
 import { RemindersModule } from './modules/reminders/reminders.module.js';
+import { QuotaAlertsModule } from './modules/quota-alerts/quota-alerts.module.js';
 
 /**
  * Class AppModule
@@ -118,6 +119,7 @@ import { RemindersModule } from './modules/reminders/reminders.module.js';
     ActivityDigestsModule,
     InboxModule,
     RemindersModule,
+    QuotaAlertsModule,
   ],
 })
 export class AppModule {}

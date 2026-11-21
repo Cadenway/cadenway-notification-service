@@ -3,7 +3,7 @@
 ## Purpose
 
 Sends the e-mails of the service. In this version, seventeen e-mails, from the Emails artboard of the
-mockup or new copy in its style:
+mockup or new copy in its style, plus a notice for organization quotas:
 
 - "Confirmation de l’adresse" for a code of purpose `email-verification` (sign-up);
 - "Code de connexion" for a code of purpose `sign-in` (sign-in without a password);
@@ -15,7 +15,8 @@ mockup or new copy in its style:
 - the security e-mails of the changes of the two-step verification of an account: "Vérification en
   deux étapes activée" and, as new copy, its deactivation, a replaced authenticator app,
   regenerated backup codes, and a security key added or removed;
-- a generic activity notice, with an authorized count and no private task content.
+- a generic activity notice, with an authorized count and no private task content;
+- a quota notice for the current administrators of an organization when usage reaches 80%.
 
 It owns the send logs of these e-mails, the content of the ones not sent yet, their templates and
 their jobs. It does not own the codes and reset links (identity-service issues, hashes and checks
@@ -25,13 +26,15 @@ with later phases.
 
 ## Public entry points
 
-| Entry point                                   | Consumers        |
-| --------------------------------------------- | ---------------- |
-| `email.module`                                | activity-digests |
-| `public/activity-notice/send-activity-notice` | activity-digests |
+| Entry point                                   | Consumers                      |
+| --------------------------------------------- | ------------------------------ |
+| `email.module`                                | activity-digests, quota-alerts |
+| `public/activity-notice/send-activity-notice` | activity-digests               |
+| `public/quota-alert/send-quota-alert-email`   | quota-alerts                   |
 
 `EmailModule` exports `SendActivityNotice` for the activity delivery job. Activity Digests
 owns preferences and current authorization checks, and records the send outcome.
+Quota Alerts owns the recipient checks and jobs for `SendQuotaAlertEmail`; Email renders and submits the message.
 
 ## Owned tables
 

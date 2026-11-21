@@ -7,11 +7,11 @@ and security notices belong to the email capability.
 
 ## Public entry points
 
-| Entry point                                         | Consumers        |
-| --------------------------------------------------- | ---------------- |
-| `public/preferences/is-in-app-notification-enabled` | inbox            |
-| `public/preferences/read-activity-preferences`      | activity-digests |
-| notification-preferences.module                     | activity-digests |
+| Entry point                                         | Consumers                      |
+| --------------------------------------------------- | ------------------------------ |
+| `public/preferences/is-in-app-notification-enabled` | inbox                          |
+| `public/preferences/read-activity-preferences`      | activity-digests, quota-alerts |
+| notification-preferences.module                     | activity-digests, quota-alerts |
 
 ## Owned tables
 

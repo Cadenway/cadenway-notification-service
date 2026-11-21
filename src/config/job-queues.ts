@@ -155,6 +155,9 @@ export const PLAN_ACTIVITY_EMAIL_QUEUE: string = 'activity.plan-email';
 /** Rechecks and dispatches one generation of a scheduled activity email occurrence. */
 export const SEND_ACTIVITY_EMAIL_QUEUE: string = 'activity.send-email';
 
+/** Discovers a bounded quota recipient page or delivers to one current administrator. */
+export const QUOTA_ALERT_QUEUE: string = 'quota.alert';
+
 /**
  * Constant jobQueues
  *
@@ -307,5 +310,16 @@ export const jobQueues: readonly JobQueueDeclaration[] = [
     retentionSeconds: 86_400,
     deleteAfterSeconds: 3_600,
     deadLetterRetentionSeconds: 86_400,
+  },
+  {
+    name: QUOTA_ALERT_QUEUE,
+    retryLimit: 4,
+    retryDelaySeconds: 10,
+    retryBackoff: true,
+    retryDelayMaxSeconds: 120,
+    expireInSeconds: 120,
+    retentionSeconds: 86_400,
+    deleteAfterSeconds: 604_800,
+    deadLetterRetentionSeconds: 604_800,
   },
 ];

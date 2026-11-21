@@ -1,9 +1,19 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { json } from 'node:stream/consumers';
 import { fileURLToPath } from 'node:url';
 
-import { notificationDeliveryAuthorizationRequestedV1Schema } from '@cadenway/contracts/events/notification-service';
+import {
+  QUOTA_THRESHOLD_REACHED_V1,
+  quotaThresholdReachedV1Schema,
+  type QuotaThresholdReachedV1,
+} from '@cadenway/contracts/events/billing-service';
+import {
+  NOTIFICATION_CREATED_V1,
+  notificationCreatedV1Schema,
+  notificationDeliveryAuthorizationRequestedV1Schema,
+} from '@cadenway/contracts/events/notification-service';
 import {
   taskAssignedV1Schema,
   taskNotificationDeliveryAuthorizedV1Schema,
@@ -11,7 +21,14 @@ import {
   type TaskNotificationDeliveryAuthorizedV1,
 } from '@cadenway/contracts/events/task-service';
 import { GetNotificationRecipientInternalResponse } from '@cadenway/contracts/validators/internal/identity-service';
-import { UpdateNotificationPreferencesInternalResponse } from '@cadenway/contracts/validators/internal/notification-service';
+import {
+  ListInboxNotificationsInternalResponse,
+  UpdateNotificationPreferencesInternalResponse,
+} from '@cadenway/contracts/validators/internal/notification-service';
+import {
+  ListQuotaNotificationRecipientsInternalQueryParams,
+  LookupQuotaNotificationRecipientsInternalBody,
+} from '@cadenway/contracts/validators/internal/organization-service';
 import {
   createApplication,
   InternalTokenSigner,
@@ -21,6 +38,7 @@ import {
   type Ed25519PrivateJwk,
 } from '@cadenway/nest-common';
 import { SystemTransactionRunner, TenantTransactionRunner } from '@cadenway/nest-common/database';
+import { JobsService } from '@cadenway/nest-jobs';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -28,7 +46,11 @@ import { z } from 'zod';
 
 import { AppModule } from '../src/app.module.js';
 import { appConfigSchema } from '../src/config/app-config.js';
-import { PLAN_ACTIVITY_EMAIL_QUEUE, SEND_ACTIVITY_EMAIL_QUEUE } from '../src/config/job-queues.js';
+import {
+  PLAN_ACTIVITY_EMAIL_QUEUE,
+  QUOTA_ALERT_QUEUE,
+  SEND_ACTIVITY_EMAIL_QUEUE,
+} from '../src/config/job-queues.js';
 import { PlanActivityEmail } from '../src/modules/activity-digests/application/use-cases/commands/digest/plan-activity-email/plan-activity-email.use-case.js';
 import { notificationIdentityTestKey } from './support/notification-identity-test-config.js';
 
@@ -39,6 +61,7 @@ const PRIVATE_TASK_NAME = 'Synthetic task title · never include in email';
 const ASSIGNED = 'task.assigned.v1';
 const DECISION = 'task.notification-delivery-authorized.v1';
 const REQUEST = 'notification.delivery-authorization-requested.v1';
+const QUOTA_RECIPIENTS = '/internal/v1/quota-notification-recipients';
 const WAIT = { timeout: 25_000, interval: 200 };
 
 const attemptRow = z.object({ id: z.uuid(), expires_at: z.date(), outcome: z.string() });
@@ -94,9 +117,10 @@ function nats(...args: readonly string[]): string {
 /** Gives each transport publication a fresh NATS id so application replay handling is exercised. */
 function publish(event: typeof ASSIGNED, payload: TaskAssignedV1): void;
 function publish(event: typeof DECISION, payload: TaskNotificationDeliveryAuthorizedV1): void;
+function publish(event: typeof QUOTA_THRESHOLD_REACHED_V1, payload: QuotaThresholdReachedV1): void;
 function publish(
   event: string,
-  payload: TaskAssignedV1 | TaskNotificationDeliveryAuthorizedV1,
+  payload: TaskAssignedV1 | TaskNotificationDeliveryAuthorizedV1 | QuotaThresholdReachedV1,
 ): void {
   nats(
     'pub',
@@ -173,10 +197,21 @@ function permit(source: TaskAssignedV1, attempt: Attempt): TaskNotificationDeliv
   });
 }
 
-describe('activity email delivery alongside Inbox', () => {
+describe('activity and quota email delivery', () => {
   const knownRecipients = new Map<string, string>();
   const identityReads: string[] = [];
   const logs: string[] = [];
+  const quotaLookups: string[] = [];
+  const quotaPages: (string | undefined)[] = [];
+  let quotaRecipients:
+    | {
+        organizationId: string;
+        emailOnly: string;
+        inboxOnly: string;
+        revoked: string;
+        current: Set<string>;
+      }
+    | undefined;
   let notification: NestExpressApplication | undefined;
   let identity: ReturnType<typeof createServer> | undefined;
   let gatewaySigner: InternalTokenSigner;
@@ -238,6 +273,60 @@ describe('activity email delivery alongside Inbox', () => {
     response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(profile));
   }
 
+  /** Models current membership with a revocation between discovery and the delivery check. */
+  async function organizationRequest(
+    verifier: InternalTokenVerifier,
+    incoming: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> {
+    const authorization = /^Bearer (\S+)$/u.exec(incoming.headers.authorization ?? '')?.[1];
+    const fixture = quotaRecipients;
+    response.setHeader('Cache-Control', 'private, no-store');
+    if (authorization === undefined || fixture === undefined) {
+      response.writeHead(403).end();
+      return;
+    }
+    const principal = await verifier.verify(authorization);
+    if (
+      principal.issuer !== 'notification-service' ||
+      principal.organizationId !== fixture.organizationId ||
+      principal.actor.type !== 'system' ||
+      principal.actor.id !== 'notification-service' ||
+      principal.role !== null ||
+      principal.scopes.length !== 0
+    ) {
+      response.writeHead(403).end();
+      return;
+    }
+    const url = new URL(incoming.url ?? '/', 'http://organization.test');
+    if (incoming.method === 'GET' && url.pathname === QUOTA_RECIPIENTS) {
+      const { cursor, limit } = ListQuotaNotificationRecipientsInternalQueryParams.parse(
+        Object.fromEntries(url.searchParams),
+      );
+      if (limit !== 100) {
+        response.writeHead(400).end();
+        return;
+      }
+      quotaPages.push(cursor);
+      const page =
+        cursor === undefined
+          ? { items: [fixture.revoked], nextCursor: 'fixture-next-page' }
+          : { items: [fixture.emailOnly, fixture.inboxOnly], nextCursor: null };
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(page));
+      return;
+    }
+    if (incoming.method === 'POST' && url.pathname === `${QUOTA_RECIPIENTS}/lookup`) {
+      const { userIds } = LookupQuotaNotificationRecipientsInternalBody.parse(await json(incoming));
+      quotaLookups.push(...userIds);
+      const items = userIds.filter((userId) => fixture.current.has(userId));
+      response
+        .writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ items }));
+      return;
+    }
+    response.writeHead(403).end();
+  }
+
   beforeAll(async () => {
     const notificationKey = notificationIdentityTestKey();
     const gatewayKey = notificationIdentityTestKey();
@@ -249,8 +338,15 @@ describe('activity email delivery alongside Inbox', () => {
       audience: 'identity-service',
       trustedIssuers: { 'notification-service': [publicKeyOf(notificationKey)] },
     });
+    const organizationVerifier = await InternalTokenVerifier.create({
+      audience: 'organization-service',
+      trustedIssuers: { 'notification-service': [publicKeyOf(notificationKey)] },
+    });
     const endpoint = createServer((incoming, response) => {
-      void identityRequest(verifier, incoming, response).catch(() => {
+      const result = incoming.url?.startsWith(QUOTA_RECIPIENTS)
+        ? organizationRequest(organizationVerifier, incoming, response)
+        : identityRequest(verifier, incoming, response);
+      void result.catch(() => {
         response.writeHead(403).end();
       });
     });
@@ -300,6 +396,7 @@ describe('activity email delivery alongside Inbox', () => {
       INTERNAL_TOKEN_TRUSTED_ISSUERS: JSON.stringify({ 'api-gateway': [publicKeyOf(gatewayKey)] }),
       INTERNAL_TOKEN_PRIVATE_JWK: JSON.stringify(notificationKey),
       IDENTITY_SERVICE_URL: `http://127.0.0.1:${String(identityAddress.port)}`,
+      ORGANIZATION_SERVICE_URL: `http://127.0.0.1:${String(identityAddress.port)}`,
       SMTP_HOST: '127.0.0.1',
       SMTP_PORT: port('mailpit', '1025'),
       MAIL_FROM: 'notice@example.test',
@@ -657,4 +754,156 @@ describe('activity email delivery alongside Inbox', () => {
       SEND_ACTIVITY_EMAIL_QUEUE,
     ]);
   });
+
+  it('delivers one quota email through Mailpit and one neutral Inbox receipt across channel preferences and replay', async () => {
+    const organizationId = randomUUID();
+    const emailOnly = randomUUID();
+    const inboxOnly = randomUUID();
+    const revoked = randomUUID();
+    const recipient = 'current-quota-owner@example.test';
+    const removedRecipient = 'removed-quota-owner@example.test';
+    const current = new Set([emailOnly, inboxOnly]);
+    quotaRecipients = { organizationId, emailOnly, inboxOnly, revoked, current };
+    knownRecipients.set(emailOnly, recipient);
+    knownRecipients.set(revoked, removedRecipient);
+    for (const [id, email] of [
+      [emailOnly, true],
+      [inboxOnly, false],
+    ] as const) {
+      const token = await gatewaySigner.sign('notification-service', {
+        actor: { type: 'user', id },
+        organizationId: null,
+      });
+      const response = await request(app().getHttpServer())
+        .patch('/internal/v1/me/notification-preferences')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ channels: { billing: { email, inApp: !email } } });
+      expect(response.status).toBe(200);
+    }
+    const threshold = quotaThresholdReachedV1Schema.parse({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      organizationId,
+      actor: { type: 'system', id: 'billing-service' },
+      version: 1,
+      metric: 'seats',
+      thresholdPercent: 80,
+      used: 4,
+      limit: 5,
+    });
+
+    publish(QUOTA_THRESHOLD_REACHED_V1, threshold);
+    publish(QUOTA_THRESHOLD_REACHED_V1, threshold);
+    await waitUntilHandled('notify-quota-threshold');
+    const system = app().get(SystemTransactionRunner);
+    await vi.waitFor(async () => {
+      const result = await system.run(({ client }) =>
+        client.query(
+          `select state from pgboss.job
+           where name = $1 and (
+             data -> 'payload' -> 'alert' ->> 'eventId' = $2 or
+             data -> 'payload' ->> 'sourceEventId' = $2
+           )`,
+          [QUOTA_ALERT_QUEUE, threshold.id],
+        ),
+      );
+      expect(result.rows).toEqual(Array.from({ length: 8 }, () => ({ state: 'completed' })));
+    }, WAIT);
+    expect(quotaPages).toEqual([undefined, 'fixture-next-page']);
+    expect(quotaLookups.toSorted()).toEqual(
+      [emailOnly, emailOnly, inboxOnly, revoked, revoked].sort(),
+    );
+    expect(identityReads).not.toContain(inboxOnly);
+
+    // A distinct job for the same source is equivalent to an Inbox retry after commit.
+    const replay = await runWithOrganizationContext(
+      { organizationId, actor: { type: 'system', id: null }, role: null, scopes: [] },
+      () =>
+        app()
+          .get(TenantTransactionRunner)
+          .run((scope) =>
+            app().get(JobsService).enqueue(scope, QUOTA_ALERT_QUEUE, {
+              kind: 'in-app',
+              userId: inboxOnly,
+              sourceEventId: threshold.id,
+            }),
+          ),
+    );
+    await vi.waitFor(async () => {
+      const jobs = await system.run(({ client }) =>
+        client.query('select state from pgboss.job where name = $1 and id = $2', [
+          QUOTA_ALERT_QUEUE,
+          replay.jobId,
+        ]),
+      );
+      expect(jobs.rows).toEqual([{ state: 'completed' }]);
+    }, WAIT);
+    expect(quotaLookups.filter((id) => id === inboxOnly)).toHaveLength(2);
+    await vi.waitFor(async () => {
+      const effects = await system.run(async ({ client }) => {
+        const stored = await client.query(
+          `select id, recipient_id, kind, actor_user_id, subject_kind, subject_value, comment_id, status
+           from inbox_notifications where organization_id = $1 and source_event_id = $2`,
+          [organizationId, threshold.id],
+        );
+        const facts = await client.query(
+          `select payload from outbox_events where organization_id = $1 and event_name = $2 and status = 'sent'`,
+          [organizationId, NOTIFICATION_CREATED_V1],
+        );
+        return { stored: stored.rows, facts: facts.rows };
+      });
+      const receipts = z.object({ id: z.uuid() }).array().parse(effects.stored);
+      const [receipt] = receipts;
+      expect(effects.stored).toEqual([
+        {
+          id: receipt?.id,
+          recipient_id: inboxOnly,
+          kind: 'billing',
+          actor_user_id: null,
+          subject_kind: null,
+          subject_value: null,
+          comment_id: null,
+          status: null,
+        },
+      ]);
+      const facts = z.object({ payload: notificationCreatedV1Schema }).array().parse(effects.facts);
+      expect(facts).toHaveLength(1);
+      expect(facts[0]?.payload).toMatchObject({
+        notificationId: receipt?.id,
+        recipientId: inboxOnly,
+        subject: null,
+      });
+    }, WAIT);
+
+    current.delete(inboxOnly);
+    const memberToken = await gatewaySigner.sign('notification-service', {
+      actor: { type: 'user', id: inboxOnly },
+      organizationId,
+      role: 'member',
+    });
+    const retainedReceipt = await request(app().getHttpServer())
+      .get('/internal/v1/inbox/notifications')
+      .set('Authorization', `Bearer ${memberToken}`);
+    expect(retainedReceipt.status).toBe(200);
+    const page = ListInboxNotificationsInternalResponse.parse(retainedReceipt.body);
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]?.record).toMatchObject({
+      kind: 'billing',
+      actorUserId: null,
+      subject: null,
+    });
+
+    const messages = mailList.parse(await mailpit('/api/v1/messages')).messages;
+    const quota = messages.filter(({ MessageID }) => MessageID.startsWith('quota-'));
+    expect(quota).toHaveLength(1);
+    const [summary] = quota;
+    if (summary === undefined) throw new Error('Mailpit did not receive the quota email.');
+    const message = mailDetail.parse(await mailpit(`/api/v1/message/${summary.ID}`));
+    expect(message.Subject).toBe('Limite de sièges proche');
+    expect(message.Text).toContain('4 sur 5 sièges');
+    expect(message.HTML).toContain(`${WEB_APP}/org/quotas`);
+    expect(message.To).toEqual([{ Address: recipient }]);
+    expect(logs.join('\n')).not.toContain(recipient);
+    expect(logs.join('\n')).not.toContain(removedRecipient);
+  }, 100_000);
 });

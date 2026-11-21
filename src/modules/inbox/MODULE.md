@@ -7,9 +7,12 @@ remain with the owning services.
 
 ## Public entry points
 
-| Entry point | Consumers |
-| ----------- | --------- |
-| None        | None      |
+| Entry point                          | Consumers    |
+| ------------------------------------ | ------------ |
+| `inbox.module`                       | quota-alerts |
+| `public/inbox/record-billing-notice` | quota-alerts |
+
+`InboxModule` exports `RecordBillingNotice` for a currently authorized quota alert recipient.
 
 ## Owned tables
 
@@ -36,8 +39,8 @@ The gateway checks the recipient's current membership and resource visibility be
 
 - `notification.delivery-authorization-requested.v1` carries the tenant, recipient, Task selector,
   immutable correlation and exclusive deadline for one request.
-- `notification.created.v1` carries the tenant, notification and recipient IDs, Task selector and
-  creation time. The realtime gateway checks current authorization before invalidating the inbox.
+- `notification.created.v1` carries the tenant, notification and recipient IDs, resource selector
+  when linked to a resource, and creation time. A billing receipt has a null subject.
 
 ## Events consumed
 
@@ -67,6 +70,8 @@ durable and email eligibility.
   inaccessible and missing records in the same way. Defer delivery while visibility is unknown.
 - Before a permitted inbox write, apply the recipient's in-app channel for the event category.
   Approval has no separate channel in the current preferences catalog.
+- A billing receipt records a subjectless notice without actor, metrics or plan details. The owner
+  of this receipt retains the history while they have access to the organization's Inbox.
 - Reading and archiving each set their own timestamp once. Archiving excludes an item from the
   unread badge and preserves its read timestamp. A repeat with a current or absent precondition
   preserves the version. Cursors belong to the caller, organization and filter.

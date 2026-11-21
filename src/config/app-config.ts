@@ -36,6 +36,7 @@ import { z } from 'zod';
  *   and the public keys of the backends allowed to call it.
  * - `IDENTITY_SERVICE_URL` and `INTERNAL_TOKEN_PRIVATE_JWK`: configure both to bind the Identity
  *   recipient reader. Both absent keeps activity email dormant. The issuer is `notification-service`.
+ * - `ORGANIZATION_SERVICE_URL`: enables quota recipient verification when Identity delivery is configured.
  *
  * - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` and `WEB_APP_URL`: the
  *   outgoing e-mail, see `EmailConfig`.
@@ -50,6 +51,7 @@ export type AppConfig = BaseConfig &
   Partial<Pick<InternalTokenSignerConfig, 'INTERNAL_TOKEN_PRIVATE_JWK'>> &
   EmailConfig & {
     readonly IDENTITY_SERVICE_URL?: string;
+    readonly ORGANIZATION_SERVICE_URL?: string;
   };
 
 /**
@@ -151,6 +153,20 @@ export interface EmailConfig {
  */
 const LOCAL_WEB_APP_URL: string = 'http://app.cadenway.localhost';
 
+/** Accepts a service origin without credentials, a path, query or fragment. */
+function serviceOrigin(service: 'Identity' | 'Organization'): z.ZodType<string> {
+  return z
+    .url({ protocol: /^https?$/u, error: `Expected the http:// or https:// origin of ${service}.` })
+    .transform((value, context) => {
+      const url = new URL(value);
+      if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+        context.addIssue({ code: 'custom', message: `Expected the origin of ${service}.` });
+        return z.NEVER;
+      }
+      return url.origin;
+    });
+}
+
 /**
  * Constant appConfigSchema
  *
@@ -172,17 +188,8 @@ export const appConfigSchema: z.ZodType<AppConfig> = z
     ...internalTokenVerifierConfigShape,
     INTERNAL_TOKEN_PRIVATE_JWK:
       internalTokenSignerConfigShape.INTERNAL_TOKEN_PRIVATE_JWK.optional(),
-    IDENTITY_SERVICE_URL: z
-      .url({ protocol: /^https?$/u, error: 'Expected the http:// or https:// origin of Identity.' })
-      .transform((value, context) => {
-        const url = new URL(value);
-        if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
-          context.addIssue({ code: 'custom', message: 'Expected the origin of Identity.' });
-          return z.NEVER;
-        }
-        return url.origin;
-      })
-      .optional(),
+    IDENTITY_SERVICE_URL: serviceOrigin('Identity').optional(),
+    ORGANIZATION_SERVICE_URL: serviceOrigin('Organization').optional(),
     SMTP_HOST: z.string().min(1),
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535),
     SMTP_USER: z.string().min(1).optional(),
@@ -214,6 +221,14 @@ export const appConfigSchema: z.ZodType<AppConfig> = z
         code: 'custom',
         path: [config.SMTP_USER === undefined ? 'SMTP_USER' : 'SMTP_PASSWORD'],
         message: 'SMTP_USER and SMTP_PASSWORD are set together or not at all.',
+      });
+    }
+    if (config.ORGANIZATION_SERVICE_URL && !config.IDENTITY_SERVICE_URL) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ORGANIZATION_SERVICE_URL'],
+        message:
+          'Quota recipient delivery also requires IDENTITY_SERVICE_URL and INTERNAL_TOKEN_PRIVATE_JWK.',
       });
     }
   });
