@@ -28,5 +28,6 @@ await runApplication({ service: 'notification-service' }, async (): Promise<void
       },
     },
   });
+  AppModule.registerSitePrivacy(app);
   await app.listen(config.PORT);
 });
