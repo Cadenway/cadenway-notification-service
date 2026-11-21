@@ -13,12 +13,14 @@ import type { InboxCandidatesReader } from './application/ports/outbound/persist
 import { ArchiveCheckedNotification } from './application/use-cases/commands/inbox/archive-checked-notification/archive-checked-notification.use-case.js';
 import { ReadCheckedNotification } from './application/use-cases/commands/inbox/read-checked-notification/read-checked-notification.use-case.js';
 import { ReadSelectedNotifications } from './application/use-cases/commands/inbox/read-selected-notifications/read-selected-notifications.use-case.js';
+import { RecordBillingNotice } from './application/use-cases/commands/inbox/record-billing-notice/record-billing-notice.use-case.js';
 import { RetryInboxDeliveryAuthorization } from './application/use-cases/commands/inbox/retry-inbox-delivery-authorization/retry-inbox-delivery-authorization.use-case.js';
 import { StageInboxDeliveries } from './application/use-cases/commands/inbox/stage-inbox-deliveries/stage-inbox-deliveries.use-case.js';
 import { StageTaskNotificationFact } from './application/use-cases/commands/inbox/stage-task-notification-fact/stage-task-notification-fact.use-case.js';
 import { GetInboxCandidate } from './application/use-cases/queries/inbox/get-inbox-candidate/get-inbox-candidate.use-case.js';
 import { ListInboxCandidates } from './application/use-cases/queries/inbox/list-inbox-candidates/list-inbox-candidates.use-case.js';
 import { ListUnreadSubjects } from './application/use-cases/queries/inbox/list-unread-subjects/list-unread-subjects.use-case.js';
+import { recordBillingNoticeProvider } from './composition/providers/use-cases/inbox/record-billing-notice.provider.js';
 import { InboxDeliveryOutbox } from './infrastructure/messaging/outbox/inbox/inbox-delivery-outbox.adapter.js';
 import { DrizzleInboxDeliveryUnitOfWork } from './infrastructure/persistence/drizzle/transactions/inbox/drizzle-inbox-delivery.unit-of-work.js';
 import { DrizzleInboxRecordsUnitOfWork } from './infrastructure/persistence/drizzle/transactions/inbox/drizzle-inbox-records.unit-of-work.js';
@@ -35,6 +37,7 @@ const INBOX_CANDIDATES_READER: symbol = Symbol('INBOX_CANDIDATES_READER');
   controllers: [InboxController],
   providers: [
     InboxDeliveryOutbox,
+    recordBillingNoticeProvider,
     {
       provide: DrizzleInboxRecordsUnitOfWork,
       inject: [TenantTransactionRunner, InboxDeliveryOutbox],
@@ -174,5 +177,6 @@ const INBOX_CANDIDATES_READER: symbol = Symbol('INBOX_CANDIDATES_READER');
         ),
     },
   ],
+  exports: [RecordBillingNotice],
 })
 export class InboxModule {}

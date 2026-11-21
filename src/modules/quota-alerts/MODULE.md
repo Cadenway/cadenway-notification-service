@@ -2,8 +2,9 @@
 
 ## Purpose
 
-Sends an email when Billing reports a committed organization quota crossing. Organization owns current
-administrator eligibility, Identity owns verified addresses, and Notification Preferences owns email preferences.
+Sends email and Inbox notices when Billing reports a committed organization quota crossing.
+Organization owns current administrator eligibility, Identity owns verified addresses, and
+Notification Preferences owns the recipient's delivery settings.
 
 ## Public entry points
 
@@ -30,18 +31,21 @@ The messaging kit retries receipt failures with backoff and moves exhausted even
 
 ## Invariants
 
-The signed tenant claim comes from the event or job scope. Discovery reads at most 100 accounts in
-one page and the retained job ID deduplicates each recipient for the crossing. Each delivery checks
-the current Billing email preference, verified Identity address, and live Organization membership, in
-that order, before SMTP. Unavailable authorities cause a retry. Disabled, removed, or missing recipients
-complete without mail. Queue data contains no addresses or profile fields.
+The signed tenant claim comes from the event or job scope. Discovery reads at most 100 accounts per
+page and enqueues separate Inbox and email jobs per recipient and crossing. Inbox retries check the
+current Organization role before recording the receipt and `billing.inApp` in one Inbox transaction.
+Email retries check `billing.email`, the current verified Identity address, and live Organization
+membership in that order. Unavailable authorities cause a retry for the affected channel. A revoked
+recipient cannot receive either channel. Queue data contains no addresses or profile fields and the
+Inbox job carries only the source event and recipient identifiers.
 
 ## Transactions
 
 The first job joins the kit's tenant receipt transaction. Each discovery job commits one page of
-recipient jobs and its continuation in one transaction after the Organization call. Delivery reads
+recipient jobs and its continuation in one transaction after the Organization call. Inbox commits its
+record and outbox fact together, deduplicated by organization, recipient and source event. Email reads
 preferences in a short tenant transaction before external calls. SMTP uses the job ID as the stable
-Message-ID. A retry after a lost SMTP acknowledgement can result in another copy.
+Message-ID. A retry after a lost SMTP acknowledgement can result in another email.
 
 ## Decisions
 

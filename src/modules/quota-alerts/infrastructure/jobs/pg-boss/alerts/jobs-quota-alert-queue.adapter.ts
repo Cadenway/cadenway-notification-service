@@ -40,6 +40,12 @@ export class JobsQuotaAlertQueue implements QuotaAlertQueue {
           { kind: 'deliver', alert, userId },
           { occurrenceKey: `${alert.eventId}:recipient:${userId}` },
         );
+        await this.jobs.enqueue(
+          scope,
+          QUOTA_ALERT_QUEUE,
+          { kind: 'in-app', sourceEventId: alert.eventId, userId },
+          { occurrenceKey: `${alert.eventId}:in-app:${userId}` },
+        );
       }
       if (nextCursor !== null) await this.enqueuePage(scope, alert, nextCursor);
     });

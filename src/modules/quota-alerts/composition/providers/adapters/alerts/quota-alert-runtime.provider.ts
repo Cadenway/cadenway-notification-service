@@ -8,10 +8,12 @@ import type { AppConfig } from '../../../../../../config/app-config.js';
 import { QUOTA_ALERT_QUEUE } from '../../../../../../config/job-queues.js';
 import { createNotificationRecipientReader } from '../../../../../../infrastructure/http/notification-recipient-reader.js';
 import { SendQuotaAlertEmail } from '../../../../../email/public/quota-alert/send-quota-alert-email.js';
+import { RecordBillingNotice } from '../../../../../inbox/public/inbox/record-billing-notice.js';
 import { ReadActivityPreferences } from '../../../../../notification-preferences/public/preferences/read-activity-preferences.js';
 import { PlanQuotaAlertPage } from '../../../../application/use-cases/commands/alerts/plan-quota-alert-page/plan-quota-alert-page.use-case.js';
 import { RequestQuotaAlert } from '../../../../application/use-cases/commands/alerts/request-quota-alert/request-quota-alert.use-case.js';
 import { SendQuotaAlert } from '../../../../application/use-cases/commands/alerts/send-quota-alert/send-quota-alert.use-case.js';
+import { SendQuotaInboxAlert } from '../../../../application/use-cases/commands/alerts/send-quota-inbox-alert/send-quota-inbox-alert.use-case.js';
 import { createOrganizationQuotaRecipients } from '../../../../infrastructure/adapters/organization/alerts/organization-quota-recipients.adapter.js';
 import { JobsQuotaAlertQueue } from '../../../../infrastructure/jobs/pg-boss/alerts/jobs-quota-alert-queue.adapter.js';
 import { QuotaAlertJobsHandler } from '../../../../presentation/jobs/handlers/alerts/quota-alert-jobs.handler.js';
@@ -29,6 +31,7 @@ export const quotaAlertRuntimeProvider: FactoryProvider<OnApplicationBootstrap |
     EventConsumers,
     ReadActivityPreferences,
     SendQuotaAlertEmail,
+    RecordBillingNotice,
   ],
   useFactory: async (
     config: AppConfig,
@@ -37,6 +40,7 @@ export const quotaAlertRuntimeProvider: FactoryProvider<OnApplicationBootstrap |
     consumers: EventConsumers,
     preferences: ReadActivityPreferences<TransactionScope>,
     email: SendQuotaAlertEmail,
+    inbox: RecordBillingNotice,
   ): Promise<OnApplicationBootstrap | null> => {
     const {
       ORGANIZATION_SERVICE_URL: organizationUrl,
@@ -66,6 +70,7 @@ export const quotaAlertRuntimeProvider: FactoryProvider<OnApplicationBootstrap |
       jobs,
       new PlanQuotaAlertPage(recipients, queue),
       send,
+      new SendQuotaInboxAlert(recipients, (input) => inbox.execute(input)),
       QUOTA_ALERT_QUEUE,
     );
     const handler = new QuotaThresholdReachedHandler(consumers, new RequestQuotaAlert(queue));

@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import type { PlanQuotaAlertPage } from '../../../../application/use-cases/commands/alerts/plan-quota-alert-page/plan-quota-alert-page.use-case.js';
 import type { SendQuotaAlert } from '../../../../application/use-cases/commands/alerts/send-quota-alert/send-quota-alert.use-case.js';
+import type { SendQuotaInboxAlert } from '../../../../application/use-cases/commands/alerts/send-quota-inbox-alert/send-quota-inbox-alert.use-case.js';
 
 const alert = quotaThresholdReachedV1Schema
   .pick({ metric: true, thresholdPercent: true, used: true, limit: true })
@@ -17,6 +18,7 @@ const payload = z.discriminatedUnion('kind', [
     cursor: z.string().min(1).max(1_024).nullable(),
   }),
   z.strictObject({ kind: z.literal('deliver'), alert, userId: z.uuid() }),
+  z.strictObject({ kind: z.literal('in-app'), sourceEventId: z.uuid(), userId: z.uuid() }),
 ]);
 
 /** Maps one bounded, tenant-qualified queue attempt to a quota command. */
@@ -27,6 +29,7 @@ export class QuotaAlertJobsHandler implements OnApplicationBootstrap {
     private readonly jobs: Pick<JobsService, 'work'>,
     private readonly plan: Pick<PlanQuotaAlertPage, 'execute'>,
     private readonly send: Pick<SendQuotaAlert, 'execute'>,
+    private readonly inbox: Pick<SendQuotaInboxAlert, 'execute'>,
     private readonly queue: string,
   ) {}
   // #endregion
@@ -52,6 +55,12 @@ export class QuotaAlertJobsHandler implements OnApplicationBootstrap {
         if (input.kind === 'page') {
           return this.plan.execute(
             { organizationId, alert: input.alert, cursor: input.cursor },
+            signal,
+          );
+        }
+        if (input.kind === 'in-app') {
+          return this.inbox.execute(
+            { organizationId, recipientId: input.userId, sourceEventId: input.sourceEventId },
             signal,
           );
         }
