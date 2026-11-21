@@ -18,7 +18,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import { SubmitContact } from '../../../../application/use-cases/commands/forms/submit-contact/submit-contact.use-case.js';
 import { SubscribeNewsletter } from '../../../../application/use-cases/commands/forms/subscribe-newsletter/subscribe-newsletter.use-case.js';
-import { SITE_CONTACT_ENABLED, SiteFormsController } from './site-forms.controller.js';
+import { SiteFormsController } from './site-forms.controller.js';
 
 const contactPath = '/internal/v1/contact-submissions';
 const newsletterPath = '/internal/v1/newsletter-subscriptions';
@@ -55,7 +55,6 @@ describe('SiteFormsController', () => {
       providers: [
         { provide: SubmitContact, useValue: { execute: submit } },
         { provide: SubscribeNewsletter, useValue: { execute: subscribe } },
-        { provide: SITE_CONTACT_ENABLED, useValue: true },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -146,24 +145,41 @@ describe('SiteFormsController', () => {
   });
 
   it('rejects malformed fields and unknown properties without returning values', async () => {
+    const unknownProperty = 'unknown-property@example.test';
     const response = await request(app.getHttpServer() as Server)
       .post(contactPath)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', randomUUID())
-      .send({ ...body, extra: 'private value' })
+      .send({ ...body, [unknownProperty]: 'private value' })
       .expect(400);
-    expect(response.body).toMatchObject({ code: 'request.invalid' });
-    expect(JSON.stringify(response.body)).not.toContain('private value');
+    expect(response.body).toMatchObject({
+      code: 'request.invalid',
+      details: { issues: [{ in: 'body', path: '', code: 'unrecognized_keys' }] },
+    });
+    expect(response.text).not.toContain(unknownProperty);
+    expect(response.text).not.toContain('private value');
     await request(app.getHttpServer() as Server)
       .post(contactPath)
       .set('Authorization', `Bearer ${token}`)
       .send(body)
       .expect(400);
-    await request(app.getHttpServer() as Server)
+    const invalidEmail = 'invalid-email-value';
+    const newsletter = await request(app.getHttpServer() as Server)
       .post(newsletterPath)
       .set('Authorization', `Bearer ${token}`)
-      .send({ email: 'invalid' })
+      .send({ email: invalidEmail, [unknownProperty]: 'private value' })
       .expect(400);
+    expect(newsletter.body).toMatchObject({
+      code: 'request.invalid',
+      details: {
+        issues: [
+          { in: 'body', path: 'email', code: 'invalid_format' },
+          { in: 'body', path: '', code: 'unrecognized_keys' },
+        ],
+      },
+    });
+    expect(newsletter.text).not.toContain(invalidEmail);
+    expect(newsletter.text).not.toContain(unknownProperty);
     expect(submit).not.toHaveBeenCalled();
     expect(subscribe).not.toHaveBeenCalled();
   });

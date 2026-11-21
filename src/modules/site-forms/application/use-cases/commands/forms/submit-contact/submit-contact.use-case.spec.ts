@@ -11,7 +11,10 @@ const input = {
   message: 'Je souhaite récupérer l’accès à mon compte.',
 };
 
-function setup(reservation: Awaited<ReturnType<ContactSubmissionTransaction['reserve']>> = 'new') {
+function setup(
+  reservation: Awaited<ReturnType<ContactSubmissionTransaction['reserve']>> = 'new',
+  deliveryEnabled = true,
+) {
   const reserve = vi.fn<ContactSubmissionTransaction['reserve']>().mockResolvedValue(reservation);
   const save = vi.fn<ContactSubmissionTransaction['save']>().mockResolvedValue('submission-id');
   const enqueueDelivery = vi
@@ -25,7 +28,13 @@ function setup(reservation: Awaited<ReturnType<ContactSubmissionTransaction['res
       return callback(transaction);
     },
   };
-  return { reserve, save, enqueueDelivery, run: called, command: new SubmitContact(work) };
+  return {
+    reserve,
+    save,
+    enqueueDelivery,
+    run: called,
+    command: new SubmitContact(work, deliveryEnabled),
+  };
 }
 
 describe('SubmitContact', () => {
@@ -50,9 +59,17 @@ describe('SubmitContact', () => {
     ['replayed', 'accepted'],
     ['in-progress', 'in-progress'],
     ['key-reused', 'key-reused'],
-  ] as const)('returns %s without creating another delivery', async (reservation, result) => {
-    const { command, save, enqueueDelivery } = setup(reservation);
+  ] as const)('returns %s while support delivery is disabled', async (reservation, result) => {
+    const { command, save, enqueueDelivery } = setup(reservation, false);
     await expect(command.execute(input)).resolves.toBe(result);
+    expect(save).not.toHaveBeenCalled();
+    expect(enqueueDelivery).not.toHaveBeenCalled();
+  });
+
+  it('rolls back a new reservation before saving contact data while delivery is disabled', async () => {
+    const { command, reserve, save, enqueueDelivery } = setup('new', false);
+    await expect(command.execute(input)).rejects.toThrow('Contact delivery is unavailable.');
+    expect(reserve).toHaveBeenCalledOnce();
     expect(save).not.toHaveBeenCalled();
     expect(enqueueDelivery).not.toHaveBeenCalled();
   });

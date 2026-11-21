@@ -23,10 +23,7 @@ import { DrizzleContactDeliveryRepository } from './infrastructure/persistence/d
 import { SystemContactSubmissionUnitOfWork } from './infrastructure/persistence/drizzle/transactions/forms/system-contact-submission.unit-of-work.js';
 import { SystemNewsletterSubscriptionUnitOfWork } from './infrastructure/persistence/drizzle/transactions/forms/system-newsletter-subscription.unit-of-work.js';
 import { SystemContactRecoveryUnitOfWork } from './infrastructure/persistence/drizzle/transactions/recovery/system-contact-recovery.unit-of-work.js';
-import {
-  SITE_CONTACT_ENABLED,
-  SiteFormsController,
-} from './presentation/http/controllers/forms/site-forms.controller.js';
+import { SiteFormsController } from './presentation/http/controllers/forms/site-forms.controller.js';
 import { DeliverContactJobHandler } from './presentation/jobs/handlers/delivery/deliver-contact-job.handler.js';
 import { RecoverContactSubmissionsHandler } from './presentation/jobs/handlers/recovery/recover-contact-submissions.handler.js';
 
@@ -53,15 +50,17 @@ function sendContactEnqueuer(jobs: JobsService) {
   controllers: [SiteFormsController],
   providers: [
     {
-      provide: SITE_CONTACT_ENABLED,
-      inject: [CONFIG],
-      useFactory: (config: AppConfig): boolean => config.SITE_CONTACT_SUPPORT_ADDRESS !== undefined,
-    },
-    {
       provide: SubmitContact,
-      inject: [SystemTransactionRunner, JobsService],
-      useFactory: (system: SystemTransactionRunner, jobs: JobsService): SubmitContact =>
-        new SubmitContact(new SystemContactSubmissionUnitOfWork(system, sendContactEnqueuer(jobs))),
+      inject: [SystemTransactionRunner, JobsService, CONFIG],
+      useFactory: (
+        system: SystemTransactionRunner,
+        jobs: JobsService,
+        config: AppConfig,
+      ): SubmitContact =>
+        new SubmitContact(
+          new SystemContactSubmissionUnitOfWork(system, sendContactEnqueuer(jobs)),
+          config.SITE_CONTACT_SUPPORT_ADDRESS !== undefined,
+        ),
     },
     {
       provide: SubscribeNewsletter,

@@ -8,8 +8,9 @@ routing and rate limits. Notification owns support delivery and subscriber state
 ## Contract surface
 
 The two internal POST routes use `@cadenway/contracts` and accept the exact signed Gateway system
-actor without an organization. The contact route requires the configured support mailbox. The
-newsletter route returns the same empty receipt for each valid submission.
+actor without an organization. A new contact submission requires a configured support mailbox.
+Contact retries are classified against the existing receipt even while support delivery is
+unavailable. The newsletter route returns the same empty receipt for each valid submission.
 
 ## Owned tables
 

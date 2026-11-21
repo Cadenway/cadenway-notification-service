@@ -120,13 +120,16 @@ describe('public site form transactions', () => {
         markEntered();
         await finished;
       }),
+      true,
     );
-    const command = new SubmitContact(new SystemContactSubmissionUnitOfWork(system, enqueue));
+    const work = new SystemContactSubmissionUnitOfWork(system, enqueue);
+    const command = new SubmitContact(work, true);
+    const disabled = new SubmitContact(work, false);
     const input = { ...form, idempotencyKey: randomUUID() };
     const inFlight = paused.execute(input);
     try {
       await Promise.race([entered, inFlight]);
-      await expect(command.execute(input)).resolves.toBe('in-progress');
+      await expect(disabled.execute(input)).resolves.toBe('in-progress');
     } finally {
       finish();
     }
@@ -179,6 +182,7 @@ describe('public site form transactions', () => {
         await enqueue(scope, submissionId);
         throw new Error('Fixture interrupted acceptance.');
       }),
+      true,
     );
     const input = { ...form, idempotencyKey: randomUUID() };
     const snapshot = () =>
@@ -192,7 +196,7 @@ describe('public site form transactions', () => {
       );
     await expect(failing.execute(input)).rejects.toThrow('Fixture interrupted acceptance.');
     expect((await snapshot()).rows).toEqual([{ receipts: 0, pending: 0, jobs: 0 }]);
-    const command = new SubmitContact(new SystemContactSubmissionUnitOfWork(system, enqueue));
+    const command = new SubmitContact(new SystemContactSubmissionUnitOfWork(system, enqueue), true);
     await expect(command.execute(input)).resolves.toBe('accepted');
     await system.run(({ client }) =>
       client.query(
@@ -204,7 +208,7 @@ describe('public site form transactions', () => {
   });
 
   it('preserves escaped code units in the accepted form text and its replay', async () => {
-    const command = new SubmitContact(new SystemContactSubmissionUnitOfWork(system, enqueue));
+    const command = new SubmitContact(new SystemContactSubmissionUnitOfWork(system, enqueue), true);
     const message = `Texte synthétique ${String.fromCharCode(0, 0xd800)} suivi d’un emoji 😀.`;
     const input = { ...form, message, idempotencyKey: randomUUID() };
 
@@ -340,7 +344,7 @@ describe('public site form transactions', () => {
   });
 
   it('denies a tenant transaction every global form row and refuses a nested system write', async () => {
-    const command = new SubmitContact(new SystemContactSubmissionUnitOfWork(system, enqueue));
+    const command = new SubmitContact(new SystemContactSubmissionUnitOfWork(system, enqueue), true);
     const newsletter = new SubscribeNewsletter(new SystemNewsletterSubscriptionUnitOfWork(system));
     await command.execute({ ...form, idempotencyKey: randomUUID() });
     await newsletter.execute({ email: form.email });

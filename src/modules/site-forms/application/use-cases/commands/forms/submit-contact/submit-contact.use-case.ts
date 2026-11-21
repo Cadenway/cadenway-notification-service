@@ -9,8 +9,11 @@ const receiptRetentionMs = 24 * 60 * 60 * 1_000;
 /** Accepts a contact form and durable support delivery together. */
 export class SubmitContact {
   // #region Constructor
-  /** Uses a system transaction because public forms have no organization. */
-  public constructor(private readonly work: ContactSubmissionUnitOfWork) {}
+  /** Uses a system transaction and admits new submissions only when delivery is configured. */
+  public constructor(
+    private readonly work: ContactSubmissionUnitOfWork,
+    private readonly deliveryEnabled: boolean,
+  ) {}
   // #endregion
 
   // #region Methods
@@ -25,6 +28,8 @@ export class SubmitContact {
       );
       if (reservation === 'replayed') return 'accepted';
       if (reservation !== 'new') return reservation;
+
+      if (!this.deliveryEnabled) throw new Error('Contact delivery is unavailable.');
 
       const submissionId = await transaction.save(input.idempotencyKey, submission);
       await transaction.enqueueDelivery(submissionId);
