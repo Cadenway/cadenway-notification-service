@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { generateKeyPairSync, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from 'node:net';
@@ -133,7 +134,9 @@ const serviceTables = [
 ] as const;
 
 /** The migrations of the service, all applied by the migrator. */
-const migrationCount = 11;
+const migrationCount = 12;
+
+const inboxCursorIndex = 'inbox_notifications_unread_subject_cursor_index';
 
 /**
  * Runs `docker compose` on the throwaway project.
@@ -813,6 +816,76 @@ describe('notification-service wiring', () => {
       'select count(*)::int as applied from drizzle.__drizzle_migrations',
     );
     expect(journal.rows).toEqual([{ applied: migrationCount }]);
+  });
+
+  it('rebuilds an interrupted concurrent inbox cursor index before replaying migrations', async () => {
+    const connectionString = process.env.MIGRATION_DATABASE_URL;
+    if (connectionString === undefined) throw new Error('The migration fixture did not start.');
+    const locker = new pg.Client({ connectionString });
+    const builder = new pg.Client({ connectionString, statement_timeout: 10_000 });
+    const ddl = readFileSync(
+      new URL('../migrations/0011_inbox_unread_subject_cursor.sql', import.meta.url),
+      'utf8',
+    );
+    const state = () =>
+      migrator.query<{ valid: boolean; ready: boolean }>(
+        'select indisvalid as valid, indisready as ready from pg_index where indexrelid = to_regclass($1)',
+        [`public.${inboxCursorIndex}`],
+      );
+    let interrupted: Promise<unknown> | undefined;
+
+    try {
+      await locker.connect();
+      await builder.connect();
+      const {
+        rows: [backend],
+      } = await builder.query<{ pid: number }>('select pg_backend_pid() as pid');
+      if (backend === undefined) throw new Error('The index builder has no fixture backend.');
+      await migrator.query(`drop index public.${inboxCursorIndex}`);
+      await locker.query('begin');
+      await locker.query('lock table public.inbox_notifications in row exclusive mode');
+      interrupted = builder
+        .query(ddl.replace('CREATE INDEX ', 'CREATE INDEX CONCURRENTLY '))
+        .catch((error: unknown) => error);
+      await vi.waitFor(
+        async () => {
+          expect((await state()).rows).toEqual([{ valid: false, ready: false }]);
+        },
+        { timeout: 5_000 },
+      );
+      await migrator.query('select pg_cancel_backend($1)', [backend.pid]);
+      await expect(interrupted).resolves.toMatchObject({ code: '57014' });
+      expect((await state()).rows).toEqual([{ valid: false, ready: false }]);
+    } finally {
+      await locker.end();
+      await interrupted;
+      await builder.end();
+    }
+
+    await runMigrator();
+    expect((await state()).rows).toEqual([{ valid: true, ready: true }]);
+    const journal = await migrator.query<{ applied: number }>(
+      'select count(*)::int as applied from drizzle.__drizzle_migrations',
+    );
+    expect(journal.rows).toEqual([{ applied: migrationCount }]);
+  });
+
+  it('refuses to replace an inbox cursor index with a different definition', async () => {
+    await migrator.query(`drop index public.${inboxCursorIndex}`);
+    await migrator.query(
+      `create index ${inboxCursorIndex} on public.inbox_notifications (organization_id)`,
+    );
+    try {
+      await expect(runMigrator()).rejects.toThrow('unexpected definition');
+      const rejected = await migrator.query<{ keys: number }>(
+        'select indnkeyatts as keys from pg_index where indexrelid = to_regclass($1)',
+        [`public.${inboxCursorIndex}`],
+      );
+      expect(rejected.rows).toEqual([{ keys: 1 }]);
+    } finally {
+      await migrator.query(`drop index public.${inboxCursorIndex}`);
+      await runMigrator();
+    }
   });
 
   it('boots with Inbox enabled and activity delivery dormant before Identity trust is provisioned', () => {
@@ -1946,6 +2019,13 @@ describe('notification-service wiring', () => {
     );
     expect(continuation.items).toEqual([{ subject: hidden, count: 1 }]);
     await create(third, visible);
+    expect(
+      (await inOwner((records) => records.unreadSubjects(atelierNordId, user, '3', null, 10)))
+        .items,
+    ).toEqual([
+      { subject: visible, count: 2 },
+      { subject: hidden, count: 1 },
+    ]);
     await expect(
       inOwner((records) => records.unreadSubjects(atelierNordId, user, '2', page.next, 1)),
     ).rejects.toBeInstanceOf(InboxGenerationChanged);
@@ -1986,10 +2066,21 @@ describe('notification-service wiring', () => {
     expect(other).toBeNull();
     const ownerOnly = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9014';
     await create(ownerOnly, null);
+    const firstWithOwnerOnly = await inOwner((records) =>
+      records.unreadSubjects(atelierNordId, user, '6', null, 1),
+    );
+    expect(firstWithOwnerOnly.items).toEqual([{ subject: null, count: 1 }]);
+    expect(firstWithOwnerOnly.next).not.toBeNull();
     expect(
-      (await inOwner((records) => records.unreadSubjects(atelierNordId, user, '6', null, 100)))
-        .items,
-    ).toContainEqual({ subject: null, count: 1 });
+      (
+        await inOwner((records) =>
+          records.unreadSubjects(atelierNordId, user, '6', firstWithOwnerOnly.next, 2),
+        )
+      ).items,
+    ).toEqual([
+      { subject: visible, count: 1 },
+      { subject: hidden, count: 1 },
+    ]);
     expect(
       await inOwner((records) => records.readAll(atelierNordId, user, '6', '6', [], now + 3000)),
     ).toEqual({ markedRead: 1, unreadCount: 0 });
