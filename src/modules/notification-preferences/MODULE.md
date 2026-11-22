@@ -49,9 +49,9 @@ transaction, including the first effective write against the default version.
 Inbox reads one current channel flag in the recipient's delivery transaction, using the same
 account lock as preference updates and a transaction-local, read-only recipient policy.
 Activity Digests reads the account snapshot in its existing system transaction, under that same
-preference lock when it plans or leases an email occurrence. Its source handoff can read one
-recipient in the existing tenant transaction using the read-only policy, restoring that scope
-before returning to the caller.
+preference lock when it plans or leases an email occurrence. Its source handoff takes the same
+account preference locks in bounded, ascending UUID batches in the existing tenant transaction.
+Each read opens and clears the read-only policy for its own recipient.
 
 ## Decisions
 

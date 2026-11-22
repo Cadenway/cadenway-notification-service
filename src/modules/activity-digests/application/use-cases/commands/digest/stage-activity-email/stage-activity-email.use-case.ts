@@ -34,9 +34,13 @@ export class StageActivityEmail {
       const ordered = [...recipients.values()].sort((left, right) =>
         left.recipientId.localeCompare(right.recipientId),
       );
+      const preferencesByAccount = await store.lockIntakePreferences(
+        organizationId,
+        ordered.map(({ recipientId }) => recipientId),
+      );
       for (const candidate of ordered) {
-        const { recipientId } = candidate;
-        const preferences = await store.lockIntakePreferences(organizationId, recipientId);
+        const preferences = preferencesByAccount.get(candidate.recipientId);
+        if (preferences === undefined) throw new Error('A recipient preference was not loaded.');
         if (preferences.cadence !== 'never' && preferences.enabled[candidate.kind]) {
           eligible.push(candidate);
         }
