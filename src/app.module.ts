@@ -17,6 +17,7 @@ import {
   MessagingModule,
   messagingHealthIndicator,
 } from '@cadenway/nest-messaging';
+import type { MessagingModuleOptions } from '@cadenway/nest-messaging';
 import { OutboxModule } from '@cadenway/nest-messaging/outbox';
 import { Module } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -98,7 +99,7 @@ import { QuotaAlertsModule } from './modules/quota-alerts/quota-alerts.module.js
     }),
     MessagingModule.forRootAsync({
       inject: [CONFIG],
-      useFactory: (config: AppConfig) => ({
+      useFactory: (config: AppConfig): MessagingModuleOptions => ({
         service: 'notification-service',
         servers: config.NATS_URL,
         user: config.NATS_USER,

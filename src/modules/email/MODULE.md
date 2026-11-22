@@ -84,10 +84,9 @@ The seven account events are consumed by `AccountSecurityEventsHandler`, one dur
 each, granted by these exact names in cadenway-ops. `password-reset-link.issued.v1` is restricted
 like `one-time-code.issued.v1` below (it is in `RESTRICTED_EVENT_NAMES`): published on
 `restricted.password-reset-link.issued.v1`, read by this service only, its dead letter without
-body. The six notices use the regular stream and contain personal information. Once the installed
-Messaging kit supports `deadLetterPayloadDropEvents`, their dead letters leave only the event
-name and broker diagnostics in `EVENTS_DLQ`. The operator reads which event failed and does not
-replay the e-mail.
+body. The six notices use the regular stream and contain personal information. Their dead letters
+leave only the event name and broker diagnostics in `EVENTS_DLQ`. The operator reads which event
+failed and does not replay the e-mail.
 `deliverPolicy: 'new'` on each: a new consumer does not replay the seven days its stream keeps,
 which would send old security e-mails again.
 

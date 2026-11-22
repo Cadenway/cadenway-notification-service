@@ -10,6 +10,7 @@ import {
   notificationCreatedV1Schema,
   reminderDueV1Schema,
 } from '@cadenway/contracts/events/notification-service';
+import { INVITATION_ISSUED_V1 } from '@cadenway/contracts/events/organization-service';
 import {
   taskAssignedV1Schema,
   taskNotificationDeliveryAuthorizedV1Schema,
@@ -40,6 +41,7 @@ import {
   TenantTransactionRunner,
 } from '@cadenway/nest-common/database';
 import type { DatabaseSchema, TransactionScope } from '@cadenway/nest-common/database';
+import { DEAD_LETTER_SEQUENCE_HEADER } from '@cadenway/nest-messaging';
 import { Controller, Get, Injectable, Module } from '@nestjs/common';
 import type { BeforeApplicationShutdown } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -193,8 +195,15 @@ function asAdmin(...args: readonly string[]): string {
  * @param consumer - Durable consumer, named as the kit names them (`<service>__<handler>`).
  * @param subject - Subject the message is published on, the only one the consumer reads.
  * @param payload - Body of the message.
+ * @param headers - Source headers in the NATS CLI `Name:Value` format.
  */
-function giveUpOn(stream: string, consumer: string, subject: string, payload: string): void {
+function giveUpOn(
+  stream: string,
+  consumer: string,
+  subject: string,
+  payload: string,
+  headers: readonly string[] = [],
+): void {
   asAdmin(
     'consumer',
     'add',
@@ -215,7 +224,13 @@ function giveUpOn(stream: string, consumer: string, subject: string, payload: st
     'instant',
     '--defaults',
   );
-  asAdmin('pub', '--jetstream', subject, payload);
+  asAdmin(
+    'pub',
+    '--jetstream',
+    ...headers.flatMap((header) => ['--header', header]),
+    subject,
+    payload,
+  );
   asAdmin('consumer', 'next', stream, consumer, '--no-ack');
 }
 
@@ -2565,6 +2580,28 @@ describe('notification-service wiring', () => {
       'Cadenway-Dead-Letter-Payload': 'dropped',
     });
     expect(restricted.body).toBe('');
+  });
+
+  it('keeps only broker diagnostics for ordinary invitation dead letters', async () => {
+    const consumer = 'organization-service__wiring-probe-invitation';
+    const subject = `evt.${INVITATION_ISSUED_V1}`;
+    giveUpOn('EVENTS', consumer, subject, '{"fixture":"Invitation delivery"}', [
+      'Cadenway-Fixture-Context:private',
+    ]);
+
+    const deadLetter = await vi.waitFor(() => lastDeadLetter(`dlq.${consumer}.${subject}`), {
+      timeout: 15_000,
+      interval: 500,
+    });
+    expect(deadLetter.headers).toMatchObject({
+      'Cadenway-Event-Name': INVITATION_ISSUED_V1,
+      'Cadenway-Dead-Letter-Consumer': consumer,
+      'Cadenway-Dead-Letter-Reason': 'max-deliveries',
+      'Cadenway-Dead-Letter-Payload': 'dropped',
+    });
+    expect(deadLetter.headers[DEAD_LETTER_SEQUENCE_HEADER]).toMatch(/^\d+$/u);
+    expect(deadLetter.headers['Cadenway-Fixture-Context']).toBeUndefined();
+    expect(deadLetter.body).toBe('');
   });
 
   it('stops being ready while NATS is down, and is ready again once it is back', async () => {
