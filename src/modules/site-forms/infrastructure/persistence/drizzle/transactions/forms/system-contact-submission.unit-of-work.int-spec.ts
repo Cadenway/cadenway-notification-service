@@ -311,6 +311,62 @@ describe('public site form transactions', () => {
     expect(restored.rows).toEqual([{ id: seeded.original.jobId }]);
   });
 
+  it('keeps recent contact messages and replays while removing expired originals in batches', async () => {
+    await system.run(async ({ client }) => {
+      await client.query(`
+        insert into site_contact_submissions (reply_to, subject, message, status, created_at, updated_at)
+        select 'visitor@example.test', 'login', '{"text":"Synthetic fixture message."}'::json,
+          case when n <= 54 then 'sent' when n = 55 then 'pending' else 'failed' end,
+          statement_timestamp() - case
+            when n <= 51 then interval '3 days'
+            when n = 52 then interval '2 days'
+            when n in (55, 56) then interval '31 days'
+            when n = 57 then interval '29 days'
+            else interval '1 hour' end,
+          statement_timestamp() - case
+            when n <= 52 then interval '25 hours'
+            else interval '30 minutes' end
+        from generate_series(1, 57) as n
+      `);
+      await client.query(`
+        insert into site_contact_receipts (key_hash, fingerprint, submission_id, expires_at)
+        select repeat('b', 64), repeat('a', 64), id, statement_timestamp() + interval '1 hour'
+        from site_contact_submissions where status = 'sent'
+          and created_at between statement_timestamp() - interval '2 days 5 minutes'
+            and statement_timestamp() - interval '1 day 23 hours 55 minutes'
+      `);
+    });
+    const recover = new RecoverContactSubmissions(
+      new SystemContactRecoveryUnitOfWork(system, enqueue),
+      false,
+    );
+    const remaining = () =>
+      system.run(({ client }) =>
+        client.query(`select status, count(*)::int as count from site_contact_submissions
+          group by status order by status`),
+      );
+
+    await recover.execute();
+    expect((await remaining()).rows).toEqual([
+      { status: 'failed', count: 1 },
+      { status: 'sent', count: 4 },
+    ]);
+    await recover.execute();
+    expect((await remaining()).rows).toEqual([
+      { status: 'failed', count: 1 },
+      { status: 'sent', count: 3 },
+    ]);
+    await system.run(({ client }) =>
+      client.query(`update site_contact_receipts
+        set expires_at = statement_timestamp() - interval '1 hour'`),
+    );
+    await recover.execute();
+    expect((await remaining()).rows).toEqual([
+      { status: 'failed', count: 1 },
+      { status: 'sent', count: 2 },
+    ]);
+  });
+
   it('deduplicates newsletter domains and leaves suppression and signup time intact', async () => {
     const command = new SubscribeNewsletter(new SystemNewsletterSubscriptionUnitOfWork(system));
     const first = { email: 'Reader@EXAMPLE.test' };

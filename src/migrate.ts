@@ -47,56 +47,100 @@ const migrationsFolder: string = fileURLToPath(new URL('../migrations', import.m
  */
 const APP_ROLE: string = 'notification_app';
 
-const inboxCursorIndex = 'inbox_notifications_unread_subject_cursor_index';
-const inboxCursorMigration = '0011_inbox_unread_subject_cursor.sql';
+/** Describes an index that can be prepared before its Drizzle journal entry. */
+interface OnlineIndex {
+  // #region Properties
+  /** Index name in the public schema. */
+  readonly name: string;
 
-// PostgreSQL 18's canonical definition for the dedicated migration. Checking it before any
-// recovery keeps IF NOT EXISTS and DROP from accepting an unrelated relation with this name.
-const inboxCursorDefinition = [
-  `CREATE INDEX ${inboxCursorIndex} ON public.inbox_notifications USING btree`,
-  `(organization_id, recipient_id, COALESCE(subject_kind, ''::text) COLLATE "C",`,
-  `COALESCE(subject_value, ''::text) COLLATE "C")`,
-  'WHERE ((read_at IS NULL) AND (archived_at IS NULL))',
-].join(' ');
+  /** Table that owns the index. */
+  readonly table: string;
 
-async function readInboxCursorIndex(client: pg.Client) {
+  /** Journaled migration that declares the index. */
+  readonly migration: string;
+
+  /** Canonical index columns and optional predicate reported by PostgreSQL. */
+  readonly canonicalSuffix: string;
+  // #endregion
+}
+
+// Checking PostgreSQL 18's canonical definition keeps IF NOT EXISTS and interrupted-build
+// recovery from accepting a different relation with the same name.
+const onlineIndexes: readonly OnlineIndex[] = [
+  {
+    name: 'inbox_notifications_unread_subject_cursor_index',
+    table: 'inbox_notifications',
+    migration: '0011_inbox_unread_subject_cursor.sql',
+    canonicalSuffix: [
+      `(organization_id, recipient_id, COALESCE(subject_kind, ''::text) COLLATE "C",`,
+      `COALESCE(subject_value, ''::text) COLLATE "C")`,
+      'WHERE ((read_at IS NULL) AND (archived_at IS NULL))',
+    ].join(' '),
+  },
+  {
+    name: 'site_contact_receipts_submission_index',
+    table: 'site_contact_receipts',
+    migration: '0012_site_contact_retention.sql',
+    canonicalSuffix: '(submission_id)',
+  },
+  {
+    name: 'site_contact_submissions_sent_expiry_index',
+    table: 'site_contact_submissions',
+    migration: '0012_site_contact_retention.sql',
+    canonicalSuffix: "(updated_at, id) WHERE (status = 'sent'::text)",
+  },
+  {
+    name: 'site_contact_submissions_undelivered_expiry_index',
+    table: 'site_contact_submissions',
+    migration: '0012_site_contact_retention.sql',
+    canonicalSuffix:
+      "(created_at, id) WHERE (status = ANY (ARRAY['pending'::text, 'failed'::text]))",
+  },
+];
+
+async function readOnlineIndex(client: pg.Client, index: OnlineIndex) {
   const result = await client.query<{
     readonly tableExists: boolean;
     readonly indexExists: boolean;
     readonly definition: string | null;
     readonly usable: boolean | null;
   }>(
-    `SELECT to_regclass('public.inbox_notifications') IS NOT NULL AS "tableExists",
+    `SELECT to_regclass($2) IS NOT NULL AS "tableExists",
        existing.oid IS NOT NULL AS "indexExists", pg_get_indexdef(idx.indexrelid) AS definition,
        idx.indisvalid AND idx.indisready AND idx.indislive AS usable
      FROM (SELECT to_regclass($1) AS oid) AS existing
      LEFT JOIN pg_index AS idx ON idx.indexrelid = existing.oid`,
-    [`public.${inboxCursorIndex}`],
+    [`public.${index.name}`, `public.${index.table}`],
   );
-  const [index] = result.rows;
-  if (index === undefined) throw new Error('Could not inspect the inbox cursor index.');
-  return index;
+  const [existing] = result.rows;
+  if (existing === undefined) throw new Error(`Could not inspect index ${index.name}.`);
+  return existing;
 }
 
-async function prepareInboxCursorIndex(client: pg.Client): Promise<void> {
-  const index = await readInboxCursorIndex(client);
-  if (index.indexExists && index.definition !== inboxCursorDefinition) {
-    throw new Error('The existing inbox cursor index has an unexpected definition.');
+async function prepareOnlineIndex(client: pg.Client, index: OnlineIndex): Promise<void> {
+  const existing = await readOnlineIndex(client, index);
+  const definition = `CREATE INDEX ${index.name} ON public.${index.table} USING btree ${index.canonicalSuffix}`;
+  if (existing.indexExists && existing.definition !== definition) {
+    throw new Error(`The existing index ${index.name} has an unexpected definition.`);
   }
-  if (!index.tableExists || index.usable === true) return;
+  if (!existing.tableExists || existing.usable === true) return;
 
-  const ddl = readFileSync(join(migrationsFolder, inboxCursorMigration), 'utf8').trim();
-  const prefix = `CREATE INDEX IF NOT EXISTS "${inboxCursorIndex}" ON "inbox_notifications" `;
-  if (!ddl.startsWith(prefix) || !/^[^;]+;$/u.test(ddl)) {
-    throw new Error('The inbox cursor migration must contain one index creation statement.');
+  const prefix = `CREATE INDEX IF NOT EXISTS "${index.name}" ON "${index.table}" `;
+  const statements = readFileSync(join(migrationsFolder, index.migration), 'utf8')
+    .split('--> statement-breakpoint')
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.startsWith(prefix));
+  const [ddl] = statements;
+  if (statements.length !== 1 || ddl === undefined || !/^[^;]+;$/u.test(ddl)) {
+    throw new Error(`The migration must contain exactly one creation statement for ${index.name}.`);
   }
-  if (index.indexExists) await client.query(`DROP INDEX CONCURRENTLY public.${inboxCursorIndex}`);
+  if (existing.indexExists) await client.query(`DROP INDEX CONCURRENTLY public.${index.name}`);
   await client.query(
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS "${inboxCursorIndex}" ON public.inbox_notifications ${ddl.slice(prefix.length)}`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS "${index.name}" ON public.${index.table} ${ddl.slice(prefix.length)}`,
   );
-  const built = await readInboxCursorIndex(client);
-  if (built.usable !== true || built.definition !== inboxCursorDefinition) {
-    throw new Error('Could not make the expected inbox cursor index available.');
+  const built = await readOnlineIndex(client, index);
+  if (built.usable !== true || built.definition !== definition) {
+    throw new Error(`Could not make index ${index.name} available with its expected definition.`);
   }
 }
 
@@ -115,7 +159,7 @@ if (!existsSync(`${migrationsFolder}/meta/_journal.json`)) {
     await client.query(
       "SELECT pg_advisory_lock(hashtextextended('notification-service:migrations', 0))",
     );
-    await prepareInboxCursorIndex(client);
+    for (const index of onlineIndexes) await prepareOnlineIndex(client, index);
     await migrate(drizzle({ client }), { migrationsFolder });
     console.log('Migrations applied.');
   } finally {

@@ -1,7 +1,8 @@
 import type { SystemTransactionRunner } from '@cadenway/nest-common/database';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gt, sql } from 'drizzle-orm';
 
 import type { ContactDeliveries } from '../../../../../application/ports/outbound/persistence/delivery/contact-deliveries.port.js';
+import { contactRetention } from '../../../../../domain/policies/forms/contact-retention.policy.js';
 import { ContactSubmission } from '../../../../../domain/value-objects/forms/contact-submission.value-object.js';
 import { siteContactSubmissions } from '../../schemas/forms/site-contact.schema.js';
 
@@ -27,6 +28,10 @@ export class DrizzleContactDeliveryRepository implements ContactDeliveries {
           and(
             eq(siteContactSubmissions.id, submissionId),
             eq(siteContactSubmissions.status, 'pending'),
+            gt(
+              siteContactSubmissions.createdAt,
+              sql`statement_timestamp() - ${contactRetention.undeliveredDays} * interval '1 day'`,
+            ),
           ),
         )
         .limit(1);

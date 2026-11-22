@@ -6,5 +6,8 @@ export interface ContactRecoveryTransaction {
 
   /** Removes expired receipt rows independently of their submission's delivery state. */
   readonly pruneExpiredReceipts: (limit: number) => Promise<void>;
+
+  /** Deletes bounded batches of expired submissions once their replay receipts are gone. */
+  readonly pruneExpiredSubmissions: (limit: number) => Promise<void>;
   // #endregion
 }

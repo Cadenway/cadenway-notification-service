@@ -44,6 +44,9 @@ export interface SmtpSettings {
    */
   readonly port: number;
 
+  /** Development-only exception validated by the service configuration. */
+  readonly allowInsecureLocal: boolean;
+
   /**
    * Property user
    *
@@ -267,7 +270,8 @@ export class NodemailerEmailSender
       host: settings.host,
       port: settings.port,
       secure: settings.port === 465,
-      requireTLS: authenticated && settings.port !== 465,
+      requireTLS: !settings.allowInsecureLocal && settings.port !== 465,
+      tls: { rejectUnauthorized: true },
       ...(authenticated ? { auth: { user: settings.user, pass: settings.password } } : {}),
       connectionTimeout: CONNECTION_TIMEOUT_MS,
       greetingTimeout: CONNECTION_TIMEOUT_MS,

@@ -134,7 +134,7 @@ const serviceTables = [
 ] as const;
 
 /** The migrations of the service, all applied by the migrator. */
-const migrationCount = 12;
+const migrationCount = 13;
 
 const inboxCursorIndex = 'inbox_notifications_unread_subject_cursor_index';
 

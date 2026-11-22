@@ -84,9 +84,10 @@ The seven account events are consumed by `AccountSecurityEventsHandler`, one dur
 each, granted by these exact names in cadenway-ops. `password-reset-link.issued.v1` is restricted
 like `one-time-code.issued.v1` below (it is in `RESTRICTED_EVENT_NAMES`): published on
 `restricted.password-reset-link.issued.v1`, read by this service only, its dead letter without
-body. The six notices are not restricted: they carry no secret, but the address, the name, the
-device and the IP address of the account, and the name of a security key, which a dead letter
-keeps 30 days in `EVENTS_DLQ`. The operator reads which event failed; the e-mail is not replayed.
+body. The six notices use the regular stream and contain personal information. Once the installed
+Messaging kit supports `deadLetterPayloadDropEvents`, their dead letters leave only the event
+name and broker diagnostics in `EVENTS_DLQ`. The operator reads which event failed and does not
+replay the e-mail.
 `deliverPolicy: 'new'` on each: a new consumer does not replay the seven days its stream keeps,
 which would send old security e-mails again.
 
@@ -109,9 +110,9 @@ consumer does not replay the seven days of invitations `EVENTS` keeps, which wou
 again; the durable consumer then resumes where it stopped across restarts, and an invitation
 issued before it first existed is not e-mailed (the inviter sends it again with "Renvoyer"). An
 event whose `expiresAt` does not come after its `occurredAt` and within 8 days (the 7 days of the
-contract and a day of tolerance) breaks the contract and becomes a dead letter. A dead letter keeps
-its body, in `EVENTS_DLQ` for 30 days: the operator reads which invitation failed, and the inviter
-sends it again; the event is not replayed.
+contract and a day of tolerance) breaks the contract and becomes a dead letter. The
+`deadLetterPayloadDropEvents` policy retains only diagnostics for the operator. The inviter can
+send the invitation again.
 
 ## Invariants
 
@@ -295,7 +296,9 @@ sends it again; the event is not replayed.
   (`/account/security`) and "Annuler la suppression" (`/account`), the paths of the artboard and
   of the contracts.
 - **SMTP.** `nodemailer`, one connection per e-mail, 10-second connection and greeting timeouts,
-  STARTTLS required as soon as an account is set, no file or URL access, no logger. An SMTP error
+  implicit TLS on port 465 and mandatory STARTTLS elsewhere, with certificate verification.
+  The explicit `SMTP_ALLOW_INSECURE_LOCAL` exception is limited to unauthenticated Mailpit or
+  loopback relays in development or tests. The transport allows no file or URL access and has no logger. An SMTP error
   leaves as `EmailNotSentError` with its codes only.
 - **Tables without organization.** The two code tables and the two security tables belong to
   accounts: no `organization_id`, and a policy that admits the system runner only, forced. The

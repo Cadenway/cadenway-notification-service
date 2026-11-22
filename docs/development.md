@@ -105,6 +105,7 @@ each value comes from on a server.
 | `NATS_USER`, `NATS_PASSWORD`          | The service           | User `notification` and its password; inbox prefix `_INBOX.notification`                                                                                          |
 | `SMTP_HOST`, `SMTP_PORT`              | The service           | The SMTP server; Mailpit locally (`localhost`, `1025`)                                                                                                            |
 | `SMTP_USER`, `SMTP_PASSWORD`          | The service           | The SMTP account, set together; empty for Mailpit, a secret on a server                                                                                           |
+| `SMTP_ALLOW_INSECURE_LOCAL`           | Local development     | Explicitly permits unauthenticated Mailpit or a loopback relay without TLS in development and tests. Defaults to false.                                           |
 | `MAIL_FROM`                           | The service           | Sender address; `no-reply@cadenway.localhost` locally                                                                                                             |
 | `WEB_APP_URL`                         | The service           | Origin of the web app for the links of the e-mails; local stack if unset                                                                                          |
 

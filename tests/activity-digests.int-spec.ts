@@ -388,6 +388,7 @@ describe('activity and quota email delivery', () => {
     }
 
     const config = loadConfig(appConfigSchema, {
+      NODE_ENV: 'test',
       PORT: '3016',
       LOG_PRETTY: 'false',
       LOG_LEVEL: 'debug',
@@ -401,6 +402,7 @@ describe('activity and quota email delivery', () => {
       IDENTITY_SERVICE_URL: `http://127.0.0.1:${String(identityAddress.port)}`,
       ORGANIZATION_SERVICE_URL: `http://127.0.0.1:${String(identityAddress.port)}`,
       SMTP_HOST: '127.0.0.1',
+      SMTP_ALLOW_INSECURE_LOCAL: 'true',
       SMTP_PORT: port('mailpit', '1025'),
       MAIL_FROM: 'notice@example.test',
       WEB_APP_URL: WEB_APP,
