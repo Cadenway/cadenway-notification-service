@@ -11,28 +11,43 @@ function setup(deliveryEnabled: boolean) {
   const requeue = vi
     .fn<ContactRecoveryTransaction['requeueStaleSubmissions']>()
     .mockResolvedValue(undefined);
+  const pruneSubmissions = vi
+    .fn<ContactRecoveryTransaction['pruneExpiredSubmissions']>()
+    .mockResolvedValue(undefined);
   const run = vi.fn<ContactRecoveryUnitOfWork['run']>((work) =>
-    work({ pruneExpiredReceipts: prune, requeueStaleSubmissions: requeue }),
+    work({
+      pruneExpiredReceipts: prune,
+      pruneExpiredSubmissions: pruneSubmissions,
+      requeueStaleSubmissions: requeue,
+    }),
   );
-  return { prune, requeue, run, recover: new RecoverContactSubmissions({ run }, deliveryEnabled) };
+  return {
+    prune,
+    pruneSubmissions,
+    requeue,
+    run,
+    recover: new RecoverContactSubmissions({ run }, deliveryEnabled),
+  };
 }
 
 describe('Contact submission recovery', () => {
   it('bounds receipt expiry and stale delivery recovery in separate transactions', async () => {
-    const { prune, recover, requeue, run } = setup(true);
+    const { prune, pruneSubmissions, recover, requeue, run } = setup(true);
     await recover.execute();
 
-    expect(run).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledTimes(3);
     expect(prune).toHaveBeenCalledExactlyOnceWith(50);
+    expect(pruneSubmissions).toHaveBeenCalledExactlyOnceWith(50);
     expect(requeue).toHaveBeenCalledExactlyOnceWith(50, 25);
   });
 
   it('still expires receipts while support delivery is disabled', async () => {
-    const { prune, recover, requeue, run } = setup(false);
+    const { prune, pruneSubmissions, recover, requeue, run } = setup(false);
     await recover.execute();
 
-    expect(run).toHaveBeenCalledOnce();
+    expect(run).toHaveBeenCalledTimes(2);
     expect(prune).toHaveBeenCalledExactlyOnceWith(50);
+    expect(pruneSubmissions).toHaveBeenCalledExactlyOnceWith(50);
     expect(requeue).not.toHaveBeenCalled();
   });
 });

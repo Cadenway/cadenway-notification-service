@@ -56,6 +56,14 @@ export const inboxNotifications = pgTable(
     index('inbox_notifications_unread_subject_index')
       .on(table.organizationId, table.recipientId, table.subjectKind, table.subjectValue)
       .where(sql`${table.readAt} is null and ${table.archivedAt} is null`),
+    index('inbox_notifications_unread_subject_cursor_index')
+      .on(
+        table.organizationId,
+        table.recipientId,
+        sql`(coalesce(${table.subjectKind}, '') collate "C")`,
+        sql`(coalesce(${table.subjectValue}, '') collate "C")`,
+      )
+      .where(sql`${table.readAt} is null and ${table.archivedAt} is null`),
     check('inbox_notifications_version_check', sql`${table.version} >= 1`),
     check('inbox_notifications_generation_check', sql`${table.creationGeneration} >= 1`),
     check(

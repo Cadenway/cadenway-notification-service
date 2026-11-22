@@ -17,6 +17,12 @@ export interface ActivityDigestPersistenceBindings {
   /** Reads the account's email choices under the preferences capability's own lock. */
   readPreferences(scope: TransactionScope, userId: string): Promise<ActivityEmailPreferences>;
 
+  /** Reads source recipients' choices using bounded batches of preference locks. */
+  readIntakePreferences(
+    scope: TransactionScope,
+    userIds: readonly string[],
+  ): Promise<ReadonlyMap<string, ActivityEmailPreferences>>;
+
   /** Schedules a bounded account planning pass with no private delivery fields. */
   enqueuePlan(
     scope: TransactionScope,

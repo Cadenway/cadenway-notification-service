@@ -92,6 +92,9 @@ export interface EmailConfig {
    */
   readonly SMTP_PORT: number;
 
+  /** Allows the unauthenticated, local Mailpit transport during development and tests. */
+  readonly SMTP_ALLOW_INSECURE_LOCAL: boolean;
+
   /**
    * Property SMTP_USER
    *
@@ -199,6 +202,10 @@ export const appConfigSchema: z.ZodType<AppConfig> = z
     TASK_SERVICE_URL: serviceOrigin('Task').optional(),
     SMTP_HOST: z.string().min(1),
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535),
+    SMTP_ALLOW_INSECURE_LOCAL: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
     SMTP_USER: z.string().min(1).optional(),
     SMTP_PASSWORD: z.string().min(1).optional(),
     MAIL_FROM: z.email({ error: 'Expected the sender e-mail address.' }),
@@ -226,6 +233,20 @@ export const appConfigSchema: z.ZodType<AppConfig> = z
         code: 'custom',
         path: [config.SMTP_USER === undefined ? 'SMTP_USER' : 'SMTP_PASSWORD'],
         message: 'SMTP_USER and SMTP_PASSWORD are set together or not at all.',
+      });
+    }
+    if (
+      config.SMTP_ALLOW_INSECURE_LOCAL &&
+      (config.NODE_ENV === 'production' ||
+        !['localhost', '127.0.0.1', '::1', 'mailpit'].includes(config.SMTP_HOST) ||
+        config.SMTP_USER !== undefined ||
+        config.SMTP_PASSWORD !== undefined ||
+        config.SMTP_PORT === 465)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['SMTP_ALLOW_INSECURE_LOCAL'],
+        message: 'Unencrypted SMTP is only available for an unauthenticated local test relay.',
       });
     }
     if (config.ORGANIZATION_SERVICE_URL && !config.IDENTITY_SERVICE_URL) {

@@ -1,9 +1,24 @@
 import type { TransactionDatabase } from '@cadenway/nest-common/database';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 
 import type { PreferencesStore } from '../../../../../application/ports/outbound/transactions/preferences/preferences-store.port.js';
 import { NotificationPreferences } from '../../../../../domain/aggregates/preferences/notification-preferences.aggregate.js';
 import { notificationPreferences } from '../../schemas/preferences/notification-preferences.schema.js';
+
+function preferenceLock(accountId: string | SQL): SQL {
+  return sql`pg_advisory_xact_lock(hashtextextended('notification_preferences:' || ${accountId}::uuid::text, 0))`;
+}
+
+/** Acquires the shared account locks in UUID order, including for accounts without a saved row. */
+export async function lockPreferenceAccounts(
+  db: TransactionDatabase,
+  accountIds: readonly string[],
+): Promise<void> {
+  // PostgreSQL evaluates the volatile projection after sorting by the input UUID.
+  await db.execute(
+    sql`select ${preferenceLock(sql`account_id`)} from unnest(${sql.param(accountIds)}::uuid[]) as batch(account_id) order by account_id`,
+  );
+}
 
 /** Persists the preferences of one verified account within a system transaction. */
 export class DrizzlePreferencesStore implements PreferencesStore {
@@ -26,9 +41,7 @@ export class DrizzlePreferencesStore implements PreferencesStore {
   /** Serializes updates to the account's slot, including before a preferences row exists. */
   public async lockAccount(userId: string): Promise<void> {
     this.requireAccount(userId);
-    await this.db.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended('notification_preferences:' || ${this.accountId}::uuid::text, 0))`,
-    );
+    await this.db.execute(sql`select ${preferenceLock(this.accountId)}`);
   }
 
   /** Loads the saved state for the bound account. The use case supplies defaults on absence. */

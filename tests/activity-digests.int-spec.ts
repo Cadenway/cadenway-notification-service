@@ -40,6 +40,7 @@ import {
 import { SystemTransactionRunner, TenantTransactionRunner } from '@cadenway/nest-common/database';
 import { JobsService } from '@cadenway/nest-jobs';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -52,6 +53,8 @@ import {
   SEND_ACTIVITY_EMAIL_QUEUE,
 } from '../src/config/job-queues.js';
 import { PlanActivityEmail } from '../src/modules/activity-digests/application/use-cases/commands/digest/plan-activity-email/plan-activity-email.use-case.js';
+import { StageActivityEmail } from '../src/modules/activity-digests/public/digest/stage-activity-email.js';
+import { UpdateNotificationPreferences } from '../src/modules/notification-preferences/application/use-cases/commands/preferences/update-notification-preferences/update-notification-preferences.use-case.js';
 import { notificationIdentityTestKey } from './support/notification-identity-test-config.js';
 
 const composeFile = fileURLToPath(new URL('../compose.dev.yaml', import.meta.url));
@@ -385,6 +388,7 @@ describe('activity and quota email delivery', () => {
     }
 
     const config = loadConfig(appConfigSchema, {
+      NODE_ENV: 'test',
       PORT: '3016',
       LOG_PRETTY: 'false',
       LOG_LEVEL: 'debug',
@@ -398,6 +402,7 @@ describe('activity and quota email delivery', () => {
       IDENTITY_SERVICE_URL: `http://127.0.0.1:${String(identityAddress.port)}`,
       ORGANIZATION_SERVICE_URL: `http://127.0.0.1:${String(identityAddress.port)}`,
       SMTP_HOST: '127.0.0.1',
+      SMTP_ALLOW_INSECURE_LOCAL: 'true',
       SMTP_PORT: port('mailpit', '1025'),
       MAIL_FROM: 'notice@example.test',
       WEB_APP_URL: WEB_APP,
@@ -694,6 +699,123 @@ describe('activity and quota email delivery', () => {
       emailCandidateCount: 0,
     });
   }, 100_000);
+
+  it('locks overlapping intake audiences in UUID order and reads a concurrent first update', async () => {
+    const low = '019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a26';
+    const high = '019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a27';
+    const system = app().get(SystemTransactionRunner);
+    const tenant = app().get(TenantTransactionRunner);
+    const stage = app().get(StageActivityEmail);
+    const update = app().get(UpdateNotificationPreferences);
+    const dialect = new PgDialect();
+    let notifyWriterReady: () => void = () => undefined;
+    let releaseWriter: () => void = () => undefined;
+    const writerReady = new Promise<void>((resolve) => {
+      notifyWriterReady = resolve;
+    });
+    const writerMayCommit = new Promise<void>((resolve) => {
+      releaseWriter = resolve;
+    });
+    const writer = system.run(
+      async ({ client }) => {
+        await client.query("select set_config('application_name', 'digest-batch-writer', true)");
+        await update.execute({ userId: high, patch: { digest: 'never' } });
+        notifyWriterReady();
+        await writerMayCommit;
+      },
+      { isolationLevel: 'read committed' },
+    );
+
+    function startIntake(name: string, recipientIds: readonly string[]) {
+      const fact = assignment(low);
+      return runWithOrganizationContext(
+        {
+          organizationId: fact.organizationId,
+          actor: { type: 'user', id: fact.assigneeId },
+          role: 'owner',
+          scopes: [],
+        },
+        () =>
+          tenant.run(async ({ client, db }) => {
+            await client.query("select set_config('application_name', $1, true)", [name]);
+            const execute = vi.spyOn(db, 'execute');
+            try {
+              const inserted = await stage.execute({
+                source: {
+                  organizationId: fact.organizationId,
+                  sourceEventId: fact.id,
+                  actorUserId: null,
+                  taskKey: fact.key,
+                  commentId: null,
+                  status: null,
+                },
+                audiences: [{ kind: 'assignment', recipientIds }],
+              });
+              const locks = execute.mock.calls.filter(([query]) => {
+                const sql =
+                  typeof query === 'string' ? query : dialect.sqlToQuery(query.getSQL()).sql;
+                return (
+                  sql.includes('pg_advisory_xact_lock') && sql.includes('notification_preferences:')
+                );
+              }).length;
+              const currentScope = await client.query(
+                "select nullif(current_setting('app.notification_recipient_id', true), '') as recipient",
+              );
+              return { inserted, locks, scope: currentScope.rows[0] };
+            } finally {
+              execute.mockRestore();
+            }
+          }),
+      );
+    }
+
+    async function expectBlockedBy(waiter: string, holder: string): Promise<void> {
+      await vi.waitFor(
+        async () => {
+          const result = await system.run(({ client }) =>
+            client.query(
+              `select exists (
+               select 1 from pg_stat_activity waiter
+               join pg_stat_activity blocker on blocker.pid = any(pg_blocking_pids(waiter.pid))
+               where waiter.application_name = $1 and blocker.application_name = $2
+             ) as blocked`,
+              [waiter, holder],
+            ),
+          );
+          expect(result.rows).toEqual([{ blocked: true }]);
+        },
+        { timeout: 3_000, interval: 40 },
+      );
+    }
+
+    const intakes: ReturnType<typeof startIntake>[] = [];
+    try {
+      await Promise.race([writerReady, writer]);
+      const first = startIntake('digest-batch-first', [high, low]);
+      intakes.push(first);
+      void first.catch(() => undefined);
+      await expectBlockedBy('digest-batch-first', 'digest-batch-writer');
+      const second = startIntake('digest-batch-second', [low, high]);
+      intakes.push(second);
+      void second.catch(() => undefined);
+      await expectBlockedBy('digest-batch-second', 'digest-batch-first');
+      releaseWriter();
+      await writer;
+      await expect(Promise.all(intakes)).resolves.toEqual(
+        Array.from({ length: 2 }, () => ({ inserted: 1, locks: 1, scope: { recipient: null } })),
+      );
+      const saved = await system.run(({ client }) =>
+        client.query(
+          'select user_id, digest from notification_preferences where user_id in ($1, $2)',
+          [low, high],
+        ),
+      );
+      expect(saved.rows).toEqual([{ user_id: high, digest: 'never' }]);
+    } finally {
+      releaseWriter();
+      await Promise.allSettled([writer, ...intakes]);
+    }
+  });
 
   it('reserves one weekly slot and persists a single deferred continuation for overflow', async () => {
     const source = assignment();

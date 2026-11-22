@@ -453,6 +453,7 @@ describe('security e-mails', () => {
       '{"api-gateway":[{"kty":"OKP","crv":"Ed25519","x":"MVZQc5h6AXxnMpaBTaYw5kI-yWWawl6zp8Srhuf5NK0","kid":"local-placeholder"}]}',
     );
     vi.stubEnv('SMTP_HOST', '127.0.0.1');
+    vi.stubEnv('SMTP_ALLOW_INSECURE_LOCAL', 'true');
     vi.stubEnv('SMTP_PORT', hostPort('mailpit', '1025'));
     vi.stubEnv('MAIL_FROM', 'no-reply@cadenway.localhost');
     vi.stubEnv('WEB_APP_URL', 'http://app.cadenway.localhost');

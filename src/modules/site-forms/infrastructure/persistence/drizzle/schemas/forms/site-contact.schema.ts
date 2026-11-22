@@ -30,6 +30,12 @@ export const siteContactSubmissions = pgTable(
     index('site_contact_submissions_pending_updated_index')
       .on(table.updatedAt, table.id)
       .where(sql`${table.status} = 'pending'`),
+    index('site_contact_submissions_sent_expiry_index')
+      .on(table.updatedAt, table.id)
+      .where(sql`${table.status} = 'sent'`),
+    index('site_contact_submissions_undelivered_expiry_index')
+      .on(table.createdAt, table.id)
+      .where(sql`${table.status} in ('pending', 'failed')`),
     pgPolicy('site_contact_submissions_system_access', {
       for: 'all',
       using: systemAccess,
@@ -52,6 +58,7 @@ export const siteContactReceipts = pgTable(
   },
   (table) => [
     index('site_contact_receipts_expiration_index').on(table.expiresAt),
+    index('site_contact_receipts_submission_index').on(table.submissionId),
     check('site_contact_receipts_key_hash_check', sql`${table.keyHash} ~ '^[0-9a-f]{64}$'`),
     check('site_contact_receipts_fingerprint_check', sql`${table.fingerprint} ~ '^[0-9a-f]{64}$'`),
     pgPolicy('site_contact_receipts_system_access', {

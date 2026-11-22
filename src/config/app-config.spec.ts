@@ -52,6 +52,7 @@ describe('appConfigSchema', () => {
       },
       SMTP_HOST: 'localhost',
       SMTP_PORT: 1025,
+      SMTP_ALLOW_INSECURE_LOCAL: false,
       MAIL_FROM: 'no-reply@cadenway.localhost',
       WEB_APP_URL: 'http://app.cadenway.localhost',
     });
@@ -74,8 +75,29 @@ describe('appConfigSchema', () => {
 
     const dormant = loadConfig(appConfigSchema, example);
     expect(dormant.IDENTITY_SERVICE_URL).toBeUndefined();
+    expect(dormant.SMTP_ALLOW_INSECURE_LOCAL).toBe(true);
     expect(dormant.INTERNAL_TOKEN_PRIVATE_JWK).toBeUndefined();
     expect(() => loadConfig(migrationConfigSchema, example)).not.toThrow();
+  });
+
+  it('allows plaintext Mailpit only with an explicit local development exception', () => {
+    const local = {
+      ...complete,
+      NODE_ENV: 'development',
+      SMTP_HOST: 'mailpit',
+      SMTP_ALLOW_INSECURE_LOCAL: 'true',
+    };
+    expect(loadConfig(appConfigSchema, local).SMTP_ALLOW_INSECURE_LOCAL).toBe(true);
+    for (const override of [
+      { NODE_ENV: 'production' },
+      { SMTP_HOST: 'smtp.example.test' },
+      { SMTP_USER: 'example-account', SMTP_PASSWORD: 'test-fixture' },
+      { SMTP_PORT: '465' },
+    ]) {
+      expect(() => loadConfig(appConfigSchema, { ...local, ...override })).toThrow(
+        /SMTP_ALLOW_INSECURE_LOCAL/u,
+      );
+    }
   });
 
   it.each(['IDENTITY_SERVICE_URL', 'INTERNAL_TOKEN_PRIVATE_JWK'])(

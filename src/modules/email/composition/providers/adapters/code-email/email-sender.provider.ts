@@ -20,6 +20,7 @@ export const emailSenderProvider: FactoryProvider<EmailSender> = {
     new NodemailerEmailSender({
       host: config.SMTP_HOST,
       port: config.SMTP_PORT,
+      allowInsecureLocal: config.SMTP_ALLOW_INSECURE_LOCAL,
       user: config.SMTP_USER,
       password: config.SMTP_PASSWORD,
       from: config.MAIL_FROM,

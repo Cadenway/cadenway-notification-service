@@ -40,6 +40,7 @@ function fixture() {
   );
   const bindings = {
     readPreferences: vi.fn(),
+    readIntakePreferences: vi.fn(),
     enqueuePlan: vi.fn().mockResolvedValue(undefined),
     enqueueDelivery: vi.fn().mockResolvedValue(undefined),
   };
@@ -56,13 +57,13 @@ describe('DrizzleActivityEmail', () => {
     } as unknown as TransactionScope;
     const repository = new DrizzleActivityEmail(new ActivityDigestScope(transaction), bindings);
 
-    expect(() => repository.lockIntakePreferences(batchId, account)).toThrow(
+    expect(() => repository.lockIntakePreferences(batchId, [account])).toThrow(
       'Activity email tenant scope does not match',
     );
     await expect(
       repository.insertCandidates(tenantId, [{ ...candidate, organizationId: batchId }]),
     ).rejects.toThrow('Activity email candidate belongs to another organization.');
-    expect(bindings.readPreferences).not.toHaveBeenCalled();
+    expect(bindings.readIntakePreferences).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
   });
 

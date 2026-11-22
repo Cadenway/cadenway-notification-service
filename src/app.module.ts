@@ -1,4 +1,13 @@
-import { RESTRICTED_EVENT_NAMES } from '@cadenway/contracts/events/identity-service';
+import {
+  RESTRICTED_EVENT_NAMES,
+  SESSION_OPENED_ON_NEW_DEVICE_V1,
+  USER_DELETION_CANCELLED_V1,
+  USER_DELETION_SCHEDULED_V1,
+  USER_EMAIL_CHANGED_V1,
+  USER_PASSWORD_CHANGED_V1,
+  USER_TWO_STEP_VERIFICATION_CHANGED_V1,
+} from '@cadenway/contracts/events/identity-service';
+import { INVITATION_ISSUED_V1 } from '@cadenway/contracts/events/organization-service';
 import { CONFIG, HealthModule, postgresIndicator } from '@cadenway/nest-common';
 import type { PostgresProbe } from '@cadenway/nest-common';
 import { DATABASE_POOL, DatabaseModule } from '@cadenway/nest-common/database';
@@ -98,6 +107,15 @@ import { QuotaAlertsModule } from './modules/quota-alerts/quota-alerts.module.js
         deadLetterWorker: true,
         restrictedDeadLetterPayload: 'drop',
         restrictedEvents: RESTRICTED_EVENT_NAMES,
+        deadLetterPayloadDropEvents: [
+          INVITATION_ISSUED_V1,
+          SESSION_OPENED_ON_NEW_DEVICE_V1,
+          USER_DELETION_CANCELLED_V1,
+          USER_DELETION_SCHEDULED_V1,
+          USER_EMAIL_CHANGED_V1,
+          USER_PASSWORD_CHANGED_V1,
+          USER_TWO_STEP_VERIFICATION_CHANGED_V1,
+        ],
       }),
     }),
     OutboxModule.forRoot(),

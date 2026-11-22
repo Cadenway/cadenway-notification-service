@@ -13,7 +13,11 @@ import { PLAN_ACTIVITY_EMAIL_QUEUE, SEND_ACTIVITY_EMAIL_QUEUE } from '../../conf
 import { EmailModule } from '../email/email.module.js';
 import { SendActivityNotice } from '../email/public/activity-notice/send-activity-notice.js';
 import { NotificationPreferencesModule } from '../notification-preferences/notification-preferences.module.js';
-import { ReadActivityPreferences } from '../notification-preferences/public/preferences/read-activity-preferences.js';
+import {
+  ReadActivityPreferences,
+  type ReadActivityPreferencesOutput,
+} from '../notification-preferences/public/preferences/read-activity-preferences.js';
+import type { ActivityEmailPreferences } from './application/models/digest/activity-email-preferences.model.js';
 import type { ActivityEmailSender } from './application/ports/outbound/email/digest/activity-email-sender.port.js';
 import type { ActivityRecipientReader } from './application/ports/outbound/identity/digest/activity-recipient-reader.port.js';
 import { AcceptActivityAuthorization } from './application/use-cases/commands/digest/accept-activity-authorization/accept-activity-authorization.use-case.js';
@@ -32,6 +36,26 @@ import { ActivityAuthorizationHandler } from './presentation/messaging/handlers/
 
 const RECIPIENT_READER = Symbol('ACTIVITY_RECIPIENT_READER');
 const EMAIL_SENDER = Symbol('ACTIVITY_EMAIL_SENDER');
+
+/** Translates the preferences owner's account snapshot into email intake and scheduling choices. */
+function emailPreferences({
+  channels,
+  digest,
+  version,
+}: ReadActivityPreferencesOutput): ActivityEmailPreferences {
+  return {
+    version,
+    cadence: digest,
+    enabled: {
+      assignment: channels.assignment.email,
+      comment: channels.comment.email,
+      mention: channels.mention.email,
+      'status-change': channels.statusChange.email,
+      access: channels.access.email,
+      approval: false,
+    },
+  };
+}
 
 /** Composition boundary for scheduled activity email. */
 @Module({
@@ -74,20 +98,13 @@ const EMAIL_SENDER = Symbol('ACTIVITY_EMAIL_SENDER');
         outbox: ActivityAuthorizationOutbox,
       ): DrizzleActivityDigestUnitOfWork =>
         new DrizzleActivityDigestUnitOfWork(tenant, system, {
-          readPreferences: async (scope, userId) => {
-            const { channels, digest, version } = await preferences.execute(scope, userId);
-            return {
-              version,
-              cadence: digest,
-              enabled: {
-                assignment: channels.assignment.email,
-                comment: channels.comment.email,
-                mention: channels.mention.email,
-                'status-change': channels.statusChange.email,
-                access: channels.access.email,
-                approval: false,
-              },
-            };
+          readPreferences: async (scope, userId) =>
+            emailPreferences(await preferences.execute(scope, userId)),
+          readIntakePreferences: async (scope, userIds) => {
+            const snapshots = await preferences.executeForRecipients(scope, userIds);
+            return new Map(
+              [...snapshots].map(([userId, snapshot]) => [userId, emailPreferences(snapshot)]),
+            );
           },
           enqueuePlan: async (scope, { runAt, ...job }) => {
             await jobs.enqueue(

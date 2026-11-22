@@ -30,7 +30,9 @@ function fixture() {
   const store = {
     lockIntakePreferences: vi
       .fn<ActivityEmailStore['lockIntakePreferences']>()
-      .mockResolvedValue(preferences),
+      .mockImplementation((_organizationId, userIds) =>
+        Promise.resolve(new Map(userIds.map((id) => [id, preferences]))),
+      ),
     insertCandidates: vi.fn<ActivityEmailStore['insertCandidates']>().mockResolvedValue(['ines']),
     enqueuePlan: vi.fn<ActivityEmailStore['enqueuePlan']>().mockResolvedValue(undefined),
     lockPreferences: vi.fn(),
@@ -61,10 +63,7 @@ describe('StageActivityEmail', () => {
     });
 
     expect(result).toBe(1);
-    expect(lockIntakePreferences.mock.calls).toEqual([
-      ['atelier', 'amelie'],
-      ['atelier', 'ines'],
-    ]);
+    expect(lockIntakePreferences).toHaveBeenCalledExactlyOnceWith('atelier', ['amelie', 'ines']);
     expect(insertCandidates).toHaveBeenCalledExactlyOnceWith('atelier', [
       expect.objectContaining({ recipientId: 'amelie', kind: 'mention' }),
       expect.objectContaining({ recipientId: 'ines', kind: 'mention' }),
@@ -79,7 +78,7 @@ describe('StageActivityEmail', () => {
     'drops candidates blocked by $cadence or $kind at intake',
     async ({ cadence, kind }) => {
       const { useCase, lockIntakePreferences, insertCandidates, enqueuePlan } = fixture();
-      lockIntakePreferences.mockResolvedValue({ ...preferences, cadence });
+      lockIntakePreferences.mockResolvedValue(new Map([['ines', { ...preferences, cadence }]]));
       await expect(
         useCase.execute({ source, audiences: [{ kind, recipientIds: ['ines'] }] }),
       ).resolves.toBe(0);

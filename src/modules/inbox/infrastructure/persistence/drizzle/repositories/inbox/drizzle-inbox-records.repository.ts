@@ -379,11 +379,13 @@ export class DrizzleInboxRecords {
       )
       select owner.generation, grouped.kind, grouped.value, grouped.total
       from owner left join lateral (
-        select subject_kind as kind, subject_value as value, count(*)::text as total
+        select nullif(coalesce(subject_kind, '') collate "C", '') as kind,
+          nullif(coalesce(subject_value, '') collate "C", '') as value,
+          count(*)::text as total
         from inbox_notifications
         where organization_id = ${organizationId}::uuid and recipient_id = ${recipientId}::uuid
           and read_at is null and archived_at is null ${cursor}
-        group by subject_kind, subject_value
+        group by coalesce(subject_kind, '') collate "C", coalesce(subject_value, '') collate "C"
         order by coalesce(subject_kind, '') collate "C", coalesce(subject_value, '') collate "C"
         limit ${limit + 1}
       ) grouped on true

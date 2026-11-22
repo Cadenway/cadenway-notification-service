@@ -36,19 +36,19 @@ export class DrizzleActivityEmail implements ActivityEmailStore {
     private readonly scope: ActivityDigestScope,
     private readonly bindings: Pick<
       ActivityDigestPersistenceBindings,
-      'readPreferences' | 'enqueuePlan' | 'enqueueDelivery'
+      'readPreferences' | 'readIntakePreferences' | 'enqueuePlan' | 'enqueueDelivery'
     >,
   ) {}
   // #endregion
 
   // #region Methods
-  /** Reads the source recipient's settings within the verified tenant transaction. */
+  /** Reads source recipients' settings within the verified tenant transaction. */
   public lockIntakePreferences(
     organizationId: string,
-    userId: string,
-  ): Promise<ActivityEmailPreferences> {
+    userIds: readonly string[],
+  ): Promise<ReadonlyMap<string, ActivityEmailPreferences>> {
     this.scope.requireTenant(organizationId);
-    return this.bindings.readPreferences(this.scope.transaction, userId);
+    return this.bindings.readIntakePreferences(this.scope.transaction, userIds);
   }
 
   /** Inserts the immutable source-recipient pairs in bounded SQL statements. */

@@ -1,5 +1,35 @@
-import { describe, expect, it } from 'vitest';
-import { EmailNotSentError } from './nodemailer-email-sender.adapter.js';
+import { createTransport } from 'nodemailer';
+import { describe, expect, it, vi } from 'vitest';
+
+import { EmailNotSentError, NodemailerEmailSender } from './nodemailer-email-sender.adapter.js';
+
+vi.mock('nodemailer', () => ({ createTransport: vi.fn() }));
+
+describe('SMTP transport security', () => {
+  it.each([
+    { port: 465, allowInsecureLocal: false, secure: true, requireTLS: false },
+    { port: 587, allowInsecureLocal: false, secure: false, requireTLS: true },
+    { port: 1025, allowInsecureLocal: true, secure: false, requireTLS: false },
+  ])('configures TLS for port $port and the validated development exception', (mode) => {
+    new NodemailerEmailSender({
+      host: mode.allowInsecureLocal ? 'mailpit' : 'smtp.example.test',
+      port: mode.port,
+      allowInsecureLocal: mode.allowInsecureLocal,
+      user: undefined,
+      password: undefined,
+      from: 'sender@example.test',
+      webAppUrl: 'https://app.example.test',
+    });
+
+    expect(createTransport).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        secure: mode.secure,
+        requireTLS: mode.requireTLS,
+        tls: { rejectUnauthorized: true },
+      }),
+    );
+  });
+});
 
 describe('EmailNotSentError', () => {
   it('keeps the codes of an SMTP refusal and drops its message, which quotes the recipient', () => {

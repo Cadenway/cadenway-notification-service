@@ -427,6 +427,7 @@ describe('code e-mails', () => {
       privateJwk: { ...publicJwk, d },
     });
     vi.stubEnv('SMTP_HOST', '127.0.0.1');
+    vi.stubEnv('SMTP_ALLOW_INSECURE_LOCAL', 'true');
     vi.stubEnv('SMTP_PORT', hostPort('mailpit', '1025'));
     vi.stubEnv('MAIL_FROM', 'no-reply@cadenway.localhost');
     vi.stubEnv('SITE_CONTACT_SUPPORT_ADDRESS', 'support@example.test');

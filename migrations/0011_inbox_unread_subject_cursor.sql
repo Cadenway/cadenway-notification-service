@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "inbox_notifications_unread_subject_cursor_index" ON "inbox_notifications" USING btree ("organization_id","recipient_id",(coalesce("subject_kind", '') collate "C"),(coalesce("subject_value", '') collate "C")) WHERE "inbox_notifications"."read_at" is null and "inbox_notifications"."archived_at" is null;

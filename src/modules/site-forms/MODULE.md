@@ -46,3 +46,7 @@ recovery by the last check time.
   resets the failed submission to pending and enqueues its original `submissionId` using
   the same occurrence key. SMTP retries keep the same Message-ID and can repeat a message
   when the server accepted it without a reply.
+- The maintenance job removes sent content after 24 hours and undelivered content 30 days
+  after acceptance, in batches of up to 50 for each group. It removes submissions only after
+  their receipt expires. Jobs and operator recovery can use undelivered submissions within the
+  retention window. Retries do not extend this window.

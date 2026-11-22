@@ -8,8 +8,11 @@ import type { ActivityEmailReservation } from '../../../../models/digest/activit
 /** Atomic state and enqueue operations in the service-owned database. */
 export interface ActivityEmailStore {
   // #region Methods
-  /** Read email choices for one source recipient under the preference lock. */
-  lockIntakePreferences(organizationId: string, userId: string): Promise<ActivityEmailPreferences>;
+  /** Read email choices for the source recipients under their account preference locks. */
+  lockIntakePreferences(
+    organizationId: string,
+    userIds: readonly string[],
+  ): Promise<ReadonlyMap<string, ActivityEmailPreferences>>;
 
   /** Insert candidates once per tenant, source fact and recipient. Return the inserted accounts. */
   insertCandidates(
