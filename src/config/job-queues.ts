@@ -164,6 +164,9 @@ export const RETRY_INBOX_DELIVERY_AUTHORIZATION_QUEUE: string =
 /** Plans one bounded page of pending activity candidates for an account. */
 export const PLAN_ACTIVITY_EMAIL_QUEUE: string = 'activity.plan-email';
 
+/** Stages email candidates from a redacted, committed Task audience. */
+export const STAGE_ACTIVITY_EMAIL_QUEUE: string = 'activity.stage-email';
+
 /** Rechecks and dispatches one generation of a scheduled activity email occurrence. */
 export const SEND_ACTIVITY_EMAIL_QUEUE: string = 'activity.send-email';
 
@@ -177,7 +180,7 @@ export const QUOTA_ALERT_QUEUE: string = 'quota.alert';
  * Every queue of this service, given as is to `provisionJobs` (`src/migrate.ts`, as the migrator
  * role) and to `JobsModule` (`src/app.module.ts`, as the application role): a queue missing from
  * the database stops the start-up, and a changed declaration reaches the database at the next
- * migration run. Every payload holds ids only, never a code nor an address.
+ * migration run. Payloads carry IDs or redacted routing metadata, never a code nor an address.
  *
  * `email.send-code` is tuned to a code that stops working 10 minutes after it was issued:
  *
@@ -314,6 +317,17 @@ export const jobQueues: readonly JobQueueDeclaration[] = [
   },
   {
     name: REQUEST_REMINDER_AUTHORIZATION_QUEUE,
+    retryLimit: 4,
+    retryDelaySeconds: 10,
+    retryBackoff: true,
+    retryDelayMaxSeconds: 120,
+    expireInSeconds: 60,
+    retentionSeconds: 86_400,
+    deleteAfterSeconds: 3_600,
+    deadLetterRetentionSeconds: 86_400,
+  },
+  {
+    name: STAGE_ACTIVITY_EMAIL_QUEUE,
     retryLimit: 4,
     retryDelaySeconds: 10,
     retryBackoff: true,

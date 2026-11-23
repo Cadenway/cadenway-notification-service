@@ -28,7 +28,10 @@ import { StageTaskNotificationFact } from '../../../../application/use-cases/com
 const AUTHORIZATION_WINDOW_MS = 30_000;
 const userIdSchema = z.uuid();
 
-type TaskFact = Pick<TaskAssignedV1, 'id' | 'organizationId' | 'actor' | 'key'>;
+type TaskFact = Pick<
+  TaskAssignedV1,
+  'id' | 'organizationId' | 'actor' | 'key' | 'occurredAt' | 'version'
+>;
 type Audiences = StageInboxDeliveriesInput['audiences'];
 type Details = Pick<StageInboxDeliveriesInput['source'], 'commentId' | 'status'>;
 
@@ -145,6 +148,9 @@ export class TaskInboxEventsHandler implements OnApplicationBootstrap {
     await this.stageDeliveries.execute({
       source,
       audiences,
+      actor: fact.actor,
+      occurredAt: fact.occurredAt,
+      version: fact.version,
       expiresAt: Date.now() + AUTHORIZATION_WINDOW_MS,
     });
   }

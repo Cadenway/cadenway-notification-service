@@ -53,7 +53,7 @@ import {
   SEND_ACTIVITY_EMAIL_QUEUE,
 } from '../src/config/job-queues.js';
 import { PlanActivityEmail } from '../src/modules/activity-digests/application/use-cases/commands/digest/plan-activity-email/plan-activity-email.use-case.js';
-import { StageActivityEmail } from '../src/modules/activity-digests/public/digest/stage-activity-email.js';
+import { StageActivityEmail } from '../src/modules/activity-digests/application/use-cases/commands/digest/stage-activity-email/stage-activity-email.use-case.js';
 import { UpdateNotificationPreferences } from '../src/modules/notification-preferences/application/use-cases/commands/preferences/update-notification-preferences/update-notification-preferences.use-case.js';
 import { notificationIdentityTestKey } from './support/notification-identity-test-config.js';
 
@@ -661,6 +661,15 @@ describe('activity and quota email delivery', () => {
       });
     }, WAIT);
     await waitUntilHandled('inbox-task-assigned');
+    await vi.waitFor(async () => {
+      const handoff = await system.run(({ client }) =>
+        client.query(
+          'select event_id from processed_events where consumer = $1 and event_id = $2',
+          ['notification-service__activity-email-source', source.id],
+        ),
+      );
+      expect(handoff.rows).toEqual([{ event_id: source.id }]);
+    }, WAIT);
     const plan = await system.run(({ client }) =>
       client.query(
         `select state from pgboss.job where name = $1 and data -> 'payload' ->> 'userId' = $2`,

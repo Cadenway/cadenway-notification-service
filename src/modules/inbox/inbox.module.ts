@@ -5,9 +5,11 @@ import { Module } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import type { AppConfig } from '../../config/app-config.js';
-import { RETRY_INBOX_DELIVERY_AUTHORIZATION_QUEUE } from '../../config/job-queues.js';
-import { ActivityDigestsModule } from '../activity-digests/activity-digests.module.js';
-import { StageActivityEmail } from '../activity-digests/public/digest/stage-activity-email.js';
+import {
+  RETRY_INBOX_DELIVERY_AUTHORIZATION_QUEUE,
+  STAGE_ACTIVITY_EMAIL_QUEUE,
+} from '../../config/job-queues.js';
+import { NotificationPreferencesModule } from '../notification-preferences/notification-preferences.module.js';
 import { IsInAppNotificationEnabled } from '../notification-preferences/public/preferences/is-in-app-notification-enabled.js';
 
 import { AcceptInboxDeliveryAuthorization } from './application/use-cases/commands/inbox/accept-inbox-delivery-authorization/accept-inbox-delivery-authorization.use-case.js';
@@ -49,7 +51,7 @@ markAutomationNotificationIdempotent();
 
 /** Composition boundary for the recipient inbox in the selected organization. */
 @Module({
-  imports: [ActivityDigestsModule],
+  imports: [NotificationPreferencesModule],
   controllers: [InboxController, AutomationNotificationController],
   providers: [
     InboxDeliveryOutbox,
@@ -162,17 +164,27 @@ markAutomationNotificationIdempotent();
     },
     {
       provide: StageTaskNotificationFact,
-      inject: [StageInboxDeliveries, StageActivityEmail, CONFIG],
+      inject: [StageInboxDeliveries, TenantTransactionRunner, JobsService, CONFIG],
       useFactory: (
         stageInbox: StageInboxDeliveries,
-        stageActivity: StageActivityEmail,
+        tenant: TenantTransactionRunner,
+        jobs: JobsService,
         config: AppConfig,
       ): StageTaskNotificationFact =>
         new StageTaskNotificationFact(stageInbox, {
-          stage: (input) =>
-            config.IDENTITY_SERVICE_URL === undefined
-              ? Promise.resolve(0)
-              : stageActivity.execute(input),
+          enqueue: async (input) => {
+            if (config.IDENTITY_SERVICE_URL === undefined) return;
+            await tenant.run(async (scope) => {
+              if (
+                scope.organizationId?.toLowerCase() !== input.source.organizationId.toLowerCase()
+              ) {
+                throw new Error('Activity email handoff tenant does not match the source event.');
+              }
+              await jobs.enqueue(scope, STAGE_ACTIVITY_EMAIL_QUEUE, input, {
+                occurrenceKey: input.source.sourceEventId,
+              });
+            });
+          },
         }),
     },
     TaskInboxEventsHandler,
