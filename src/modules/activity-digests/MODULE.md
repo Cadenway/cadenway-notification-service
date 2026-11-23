@@ -8,10 +8,7 @@ profiles, Task owns current access to its resources, and Email owns rendering an
 
 ## Public entry points
 
-| Entry point                          | Consumers |
-| ------------------------------------ | --------- |
-| activity-digests.module              | inbox     |
-| `public/digest/stage-activity-email` | inbox     |
+None.
 
 ## Owned tables
 
@@ -31,8 +28,9 @@ also emit with separate correlations. Task owns the decision.
 
 ## Events consumed
 
-- Inbox hands off its trusted Assignment, Mention, Comment, Status Change and Access audience in
-  the source event transaction.
+- Inbox enqueues its trusted Assignment, Mention, Comment, Status Change and Access audience in
+  the source event transaction. The `activity.stage-email` worker has its own durable source
+  receipt and retries independently of the Inbox source consumer.
 - `task.notification-delivery-authorized.v1` is consumed on the dedicated
   `activity-task-delivery-authorized` durable and accepts only a Task system decision for a
   current activity correlation. Inbox keeps its own decision durable.
@@ -43,7 +41,7 @@ also emit with separate correlations. Task owns the decision.
   recipient account, and source selectors. Register a candidate once per source event and
   recipient. The in-app setting, Inbox row, and read or archive state have no bearing on email
   eligibility. Apply the email preference for each activity category.
-- The source fact's first processing checks the recipient's locked current settings before
+- The first Activity worker processing checks the recipient's locked current settings before
   staging. Disabled categories and `never` create no candidate or planning job. Eligibility uses
   the preference at ingestion, with current settings checked again at planning and delivery.
 - Do not disturb applies to mobile. Approval has no published email option and remains in-app.
@@ -68,7 +66,10 @@ also emit with separate correlations. Task owns the decision.
 
 ## Transactions
 
-Candidate intake persists deduplication, candidate state and the next planning job together.
+The Inbox transaction commits its source receipt, authorization requests and the durable email
+handoff together. The Activity worker commits its separate receipt, candidate state and the next
+planning job together. Retrying the same handoff after commit has no effect even if the first
+attempt found no eligible recipients.
 Planning reserves the occurrence and enqueues its job atomically. Task authorization attempts
 and their outbox records commit together. Profile reads and SMTP run outside database
 transactions. Recheck the verified recipient after claiming the send lease and record delivery
@@ -79,11 +80,13 @@ in a separate transaction.
 - Activating activity email requires both `IDENTITY_SERVICE_URL` and `INTERNAL_TOKEN_PRIVATE_JWK`.
   Run the regular migrator to apply `0008` and provision the new queues. Deploy the matching trust
   at Identity and the dedicated NATS durable permissions before setting the pair. With both
-  variables absent, Inbox and the existing email capabilities run without staging activity
+  variables absent, Inbox and the existing email capabilities run without queuing activity
   candidates or registering activity consumers and workers. During a mixed rollout, a dormant
   replica can acknowledge the shared Inbox source fact without handing it off to Activity.
   Activity coverage starts once every Notification replica has the pair enabled. Inbox behavior
-  stays the same during rollout.
+  stays the same during rollout. An older active version can still process its own new Inbox
+  deliveries directly. A queued handoff persists for the next compatible active worker within
+  its one-day retention window.
 - The account planner receives a transactionally enqueued job when a candidate is staged. It
   reserves at most 100 candidates per pass and enqueues delivery in the same transaction. A
   daily or weekly overflow continuation waits until its current slot has passed. The

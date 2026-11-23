@@ -6,10 +6,15 @@ import {
 } from '@cadenway/nest-common/database';
 import { JobsService } from '@cadenway/nest-jobs';
 import { EventConsumers } from '@cadenway/nest-messaging';
+import { PostgresEventDeduplicator } from '@cadenway/nest-messaging/consumer/postgres';
 import { Module } from '@nestjs/common';
 
 import type { AppConfig } from '../../config/app-config.js';
-import { PLAN_ACTIVITY_EMAIL_QUEUE, SEND_ACTIVITY_EMAIL_QUEUE } from '../../config/job-queues.js';
+import {
+  PLAN_ACTIVITY_EMAIL_QUEUE,
+  SEND_ACTIVITY_EMAIL_QUEUE,
+  STAGE_ACTIVITY_EMAIL_QUEUE,
+} from '../../config/job-queues.js';
 import { EmailModule } from '../email/email.module.js';
 import { SendActivityNotice } from '../email/public/activity-notice/send-activity-notice.js';
 import { NotificationPreferencesModule } from '../notification-preferences/notification-preferences.module.js';
@@ -32,6 +37,7 @@ import { ActivityAuthorizationOutbox } from './infrastructure/messaging/outbox/d
 import { DrizzleActivityDigestQueries } from './infrastructure/persistence/drizzle/repositories/digest/drizzle-activity-digest-queries.repository.js';
 import { DrizzleActivityDigestUnitOfWork } from './infrastructure/persistence/drizzle/transactions/digest/drizzle-activity-digest.unit-of-work.js';
 import { ActivityEmailJobsHandler } from './presentation/jobs/handlers/digest/activity-email-jobs.handler.js';
+import { ActivityEmailSourceHandler } from './presentation/jobs/handlers/digest/activity-email-source.handler.js';
 import { ActivityAuthorizationHandler } from './presentation/messaging/handlers/task/activity-authorization.handler.js';
 
 const RECIPIENT_READER = Symbol('ACTIVITY_RECIPIENT_READER');
@@ -147,6 +153,32 @@ function emailPreferences({
         new StageActivityEmail(work.email),
     },
     {
+      provide: ActivityEmailSourceHandler,
+      inject: [JobsService, StageActivityEmail, PostgresEventDeduplicator, CONFIG],
+      useFactory: (
+        jobs: JobsService,
+        stage: StageActivityEmail,
+        receipts: PostgresEventDeduplicator,
+        config: AppConfig,
+      ): ActivityEmailSourceHandler =>
+        new ActivityEmailSourceHandler(
+          jobs,
+          stage,
+          async (envelope, handle) => {
+            await receipts.run(
+              {
+                consumer: 'notification-service__activity-email-source',
+                event: STAGE_ACTIVITY_EMAIL_QUEUE,
+                envelope,
+              },
+              handle,
+            );
+          },
+          STAGE_ACTIVITY_EMAIL_QUEUE,
+          config.IDENTITY_SERVICE_URL !== undefined,
+        ),
+    },
+    {
       provide: PlanActivityEmail,
       inject: [RECIPIENT_READER, DrizzleActivityDigestUnitOfWork],
       useFactory: (
@@ -219,6 +251,5 @@ function emailPreferences({
         ),
     },
   ],
-  exports: [StageActivityEmail],
 })
 export class ActivityDigestsModule {}

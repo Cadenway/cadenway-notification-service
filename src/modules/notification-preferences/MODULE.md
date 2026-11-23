@@ -7,11 +7,11 @@ and security notices belong to the email capability.
 
 ## Public entry points
 
-| Entry point                                         | Consumers                      |
-| --------------------------------------------------- | ------------------------------ |
-| `public/preferences/is-in-app-notification-enabled` | inbox                          |
-| `public/preferences/read-activity-preferences`      | activity-digests, quota-alerts |
-| notification-preferences.module                     | activity-digests, quota-alerts |
+| Entry point                                         | Consumers                             |
+| --------------------------------------------------- | ------------------------------------- |
+| `public/preferences/is-in-app-notification-enabled` | inbox                                 |
+| `public/preferences/read-activity-preferences`      | activity-digests, quota-alerts        |
+| notification-preferences.module                     | activity-digests, inbox, quota-alerts |
 
 ## Owned tables
 
@@ -49,8 +49,8 @@ transaction, including the first effective write against the default version.
 Inbox reads one current channel flag in the recipient's delivery transaction, using the same
 account lock as preference updates and a transaction-local, read-only recipient policy.
 Activity Digests reads the account snapshot in its existing system transaction, under that same
-preference lock when it plans or leases an email occurrence. Its source handoff takes the same
-account preference locks in bounded, ascending UUID batches in the existing tenant transaction.
+preference lock when it plans or leases an email occurrence. Its intake worker takes the same
+account preference locks in bounded, ascending UUID batches in its own tenant transaction.
 Each read opens and clears the read-only policy for its own recipient.
 
 ## Decisions

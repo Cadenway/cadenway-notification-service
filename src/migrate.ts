@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { loadConfig } from '@cadenway/nest-common';
 import { provisionJobs } from '@cadenway/nest-jobs';
+import { finishOutboxLeaseMigration } from '@cadenway/nest-messaging/outbox/schema';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -98,7 +99,7 @@ const onlineIndexes: readonly OnlineIndex[] = [
   },
 ];
 
-async function readOnlineIndex(client: pg.Client, index: OnlineIndex) {
+async function readOnlineIndex(client: pg.PoolClient, index: OnlineIndex) {
   const result = await client.query<{
     readonly tableExists: boolean;
     readonly indexExists: boolean;
@@ -117,7 +118,7 @@ async function readOnlineIndex(client: pg.Client, index: OnlineIndex) {
   return existing;
 }
 
-async function prepareOnlineIndex(client: pg.Client, index: OnlineIndex): Promise<void> {
+async function prepareOnlineIndex(client: pg.PoolClient, index: OnlineIndex): Promise<void> {
   const existing = await readOnlineIndex(client, index);
   const definition = `CREATE INDEX ${index.name} ON public.${index.table} USING btree ${index.canonicalSuffix}`;
   if (existing.indexExists && existing.definition !== definition) {
@@ -148,22 +149,26 @@ if (!existsSync(`${migrationsFolder}/meta/_journal.json`)) {
   console.log('No migration has been generated yet: nothing to apply.');
 } else {
   const migration: Readonly<MigrationConfig> = loadConfig(migrationConfigSchema);
-  const client: pg.Client = new pg.Client({
+  const pool = new pg.Pool({
     connectionString: migration.MIGRATION_DATABASE_URL,
     application_name: 'notification-service-migrator',
   });
   try {
-    await client.connect();
-    // The session lock covers the online index and Drizzle's journal. Closing the session releases
-    // it after success, failure or interruption. Fresh databases build the index on the new table.
-    await client.query(
-      "SELECT pg_advisory_lock(hashtextextended('notification-service:migrations', 0))",
-    );
-    for (const index of onlineIndexes) await prepareOnlineIndex(client, index);
-    await migrate(drizzle({ client }), { migrationsFolder });
+    const client = await pool.connect();
+    try {
+      // One session covers Drizzle's journal and both phases of the online index builds.
+      await client.query(
+        "SELECT pg_advisory_lock(hashtextextended('notification-service:migrations', 0))",
+      );
+      for (const index of onlineIndexes) await prepareOnlineIndex(client, index);
+      await migrate(drizzle({ client }), { migrationsFolder });
+      await finishOutboxLeaseMigration(client);
+    } finally {
+      client.release(true);
+    }
     console.log('Migrations applied.');
   } finally {
-    await client.end();
+    await pool.end();
   }
   await provisionJobs({
     connection: { connectionString: migration.MIGRATION_DATABASE_URL },

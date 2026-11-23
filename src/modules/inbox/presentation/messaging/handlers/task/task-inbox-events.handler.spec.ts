@@ -52,11 +52,11 @@ async function harness() {
     },
   } as unknown as EventConsumers;
   const stage = vi.fn<StageInboxDeliveries['execute']>().mockResolvedValue(0);
-  const stageActivity = vi.fn<InboxActivityDelivery['stage']>().mockResolvedValue(1);
+  const enqueueActivity = vi.fn<InboxActivityDelivery['enqueue']>().mockResolvedValue();
   const accept = vi.fn<AcceptInboxDeliveryAuthorization['execute']>().mockResolvedValue(false);
   const handler = new TaskInboxEventsHandler(
     consumers,
-    new StageTaskNotificationFact({ execute: stage }, { stage: stageActivity }),
+    new StageTaskNotificationFact({ execute: stage }, { enqueue: enqueueActivity }),
     { execute: accept } as unknown as AcceptInboxDeliveryAuthorization,
   );
   await handler.onApplicationBootstrap();
@@ -79,7 +79,7 @@ async function harness() {
     await subscription.handle(subscription.schemas[event].parse(data), context);
   }
 
-  return { subscriptions, deliver, stage, stageActivity, accept };
+  return { subscriptions, deliver, stage, enqueueActivity, accept };
 }
 
 describe('TaskInboxEventsHandler', () => {
@@ -101,7 +101,7 @@ describe('TaskInboxEventsHandler', () => {
   });
 
   it('only stages the new assignee and leaves the task title out of the candidate', async () => {
-    const { deliver, stage, stageActivity } = await harness();
+    const { deliver, stage, enqueueActivity } = await harness();
     await deliver('task.assigned.v1', {
       ...ENVELOPE,
       ...TASK,
@@ -119,9 +119,12 @@ describe('TaskInboxEventsHandler', () => {
       status: null,
     });
     expect(input?.expiresAt).toBeGreaterThan(Date.now());
-    expect(stageActivity).toHaveBeenCalledExactlyOnceWith({
+    expect(enqueueActivity).toHaveBeenCalledExactlyOnceWith({
       source: input?.source,
       audiences: input?.audiences,
+      actor: ENVELOPE.actor,
+      occurredAt: ENVELOPE.occurredAt,
+      version: ENVELOPE.version,
     });
   });
 
@@ -189,7 +192,7 @@ describe('TaskInboxEventsHandler', () => {
   });
 
   it('stages designated reviewers and the requester for their respective approval facts', async () => {
-    const { deliver, stage, stageActivity } = await harness();
+    const { deliver, stage, enqueueActivity } = await harness();
     const approval = { ...ENVELOPE, ...LOCATION, roundId: LINK_ID };
     await deliver('approval.requested.v1', { ...approval, reviewerUserIds: [CAMILLE] });
     await deliver('approval.decided.v1', {
@@ -203,7 +206,7 @@ describe('TaskInboxEventsHandler', () => {
     expect(requested?.audiences).toEqual([{ kind: 'approval', recipientIds: [CAMILLE] }]);
     expect(decided?.audiences).toEqual([{ kind: 'approval', recipientIds: [LEA] }]);
     expect(decided?.source.commentId).toBe(LINK_ID);
-    expect(stageActivity.mock.calls.map(([input]) => input.audiences)).toEqual([[], []]);
+    expect(enqueueActivity).not.toHaveBeenCalled();
   });
 
   it('uses the exact task request recipients and withholds decisions without an approved link', async () => {
@@ -247,7 +250,7 @@ describe('TaskInboxEventsHandler', () => {
   });
 
   it('passes only a Task system decision to the inbox attempt and propagates cancellation', async () => {
-    const { deliver, accept, stageActivity } = await harness();
+    const { deliver, accept, enqueueActivity } = await harness();
     const decision = {
       ...ENVELOPE,
       version: 1,
@@ -274,6 +277,6 @@ describe('TaskInboxEventsHandler', () => {
       deliver('task.notification-delivery-authorized.v1', fromTask, AbortSignal.abort(expired)),
     ).rejects.toBe(expired);
     expect(accept).toHaveBeenCalledTimes(1);
-    expect(stageActivity).not.toHaveBeenCalled();
+    expect(enqueueActivity).not.toHaveBeenCalled();
   });
 });

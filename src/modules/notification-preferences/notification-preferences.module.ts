@@ -1,5 +1,5 @@
 import { SystemTransactionRunner, TenantTransactionRunner } from '@cadenway/nest-common/database';
-import { Global, Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 
 import { UpdateNotificationPreferences } from './application/use-cases/commands/preferences/update-notification-preferences/update-notification-preferences.use-case.js';
 import { GetNotificationPreferences } from './application/use-cases/queries/preferences/get-notification-preferences/get-notification-preferences.use-case.js';
@@ -11,7 +11,6 @@ import { SystemPreferencesUnitOfWork } from './infrastructure/persistence/drizzl
 import { NotificationPreferencesController } from './presentation/http/controllers/preferences/notification-preferences.controller.js';
 
 /** Composition boundary for account notification preferences. */
-@Global()
 @Module({
   controllers: [NotificationPreferencesController],
   providers: [
