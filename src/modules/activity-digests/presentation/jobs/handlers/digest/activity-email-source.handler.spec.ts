@@ -70,4 +70,22 @@ describe('ActivityEmailSourceHandler', () => {
     );
     expect(deduplicate).not.toHaveBeenCalled();
   });
+
+  it('accepts the published Task actor shape for a system fact without an actor id', async () => {
+    const execute = vi.fn().mockResolvedValue(0);
+    const handler = new ActivityEmailSourceHandler(
+      { work: vi.fn() },
+      { execute },
+      async (_envelope, handle) => handle(),
+      queue,
+      true,
+    );
+    const fact = { ...payload, actor: { type: 'system', id: '' } };
+
+    await expect(handler.handle({ ...job, payload: fact })).resolves.toBeUndefined();
+    expect(execute).toHaveBeenCalledExactlyOnceWith({
+      source: payload.source,
+      audiences: payload.audiences,
+    });
+  });
 });

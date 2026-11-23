@@ -1,3 +1,4 @@
+import { taskAssignedV1Schema } from '@cadenway/contracts/events/task-service';
 import { runWithOrganizationContext } from '@cadenway/nest-common';
 import type { Job, JobsService } from '@cadenway/nest-jobs';
 import type { EventEnvelope } from '@cadenway/nest-messaging';
@@ -21,7 +22,7 @@ const sourceSchema = z.strictObject({
 const payloadSchema = z.strictObject({
   source: sourceSchema,
   audiences: z.array(audienceSchema).min(1),
-  actor: z.strictObject({ type: z.string().min(1), id: z.string().min(1) }),
+  actor: taskAssignedV1Schema.shape.actor,
   occurredAt: z.iso.datetime({ offset: true }),
   version: z.int().nonnegative(),
 });
